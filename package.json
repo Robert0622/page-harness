@@ -1,6 +1,6 @@
 {
   "name": "page-harness",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Point it at any frontend URL and get Pick / Artifacts / Chat on the page, driven by the coding agent CLI on your machine.",
   "keywords": [
     "agent",
@@ -29,8 +29,7 @@
     "THIRD_PARTY_LICENSES.md",
     "docs/*.svg",
     "docs/*.png",
-    "docs/*.webp",
-    "docs/*.mp4"
+    "docs/*.webp"
   ],
   "engines": {
     "node": ">=20.11"

@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <video src="https://cdn.jsdelivr.net/npm/page-harness@0.1.8/docs/hero-zh.mp4" poster="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero-zh.webp" width="720" controls playsinline></video>
+  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero-zh.webp" width="720" alt="page-harness">
 </p>
 
 ## 概览
