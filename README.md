@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://unpkg.com/page-harness@0.1.5/docs/logo.svg" width="72" alt="page-harness logo">
+  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/logo.svg" width="72" alt="page-harness logo">
 </p>
 
 <h1 align="center">page-harness</h1>
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <img src="https://unpkg.com/page-harness@0.1.5/docs/hero.webp" width="720" alt="page-harness promo video (0:30)">
+  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero.webp" width="720" alt="page-harness promo video (0:30)">
 </p>
 
 <p align="center"><sub>0:30 · 1080p</sub></p>
@@ -76,25 +76,25 @@ Open **http://127.0.0.1:17990**. That is your app as usual, plus a dock in the b
 
 **Pick and Notes, nothing else.** With `--no-agent` no agent CLI is started. Pick an element, leave a comment or an edit, reply, resolve and approve per page. [Details →](#review-only---no-agent)
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/review-only.png" width="720" alt="Page notes panel in review-only mode"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/review-only.png" width="720" alt="Page notes panel in review-only mode"></p>
 
 ### Bookmarklet home
 
 **One button to drag.** Run `npx page-harness` with no URL and the home page has a single **✦ Page-Harness** button. Drag it to the bookmarks bar. [Details →](#bookmarklet-no-url)
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/home.png" width="520" alt="Home page with the ✦ Page-Harness button"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/home.png" width="520" alt="Home page with the ✦ Page-Harness button"></p>
 
 ### Notes on any site
 
 **Click the bookmark on any page.** The dock is injected into that page in a Shadow DOM, with no proxy, and notes are saved to your local server, grouped by site.
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/bookmarklet.png" width="720" alt="Bookmarklet dock on a plain page"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/bookmarklet.png" width="720" alt="Bookmarklet dock on a plain page"></p>
 
 ### My notes
 
 **Every site's notes in one place.** Sites on the left, that site's notes on the right, with Export Markdown, Export JSON and Copy prompt for your agent.
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/home-notes.png" width="720" alt="My notes view"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/home-notes.png" width="720" alt="My notes view"></p>
 
 ## How it works
 

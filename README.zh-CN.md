@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://unpkg.com/page-harness@0.1.5/docs/logo.svg" width="72" alt="page-harness logo">
+  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/logo.svg" width="72" alt="page-harness logo">
 </p>
 
 <h1 align="center">page-harness</h1>
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <img src="https://unpkg.com/page-harness@0.1.5/docs/hero-zh.webp" width="720" alt="page-harness 宣传视频（36 秒）">
+  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero-zh.webp" width="720" alt="page-harness 宣传视频（36 秒）">
 </p>
 
 <p align="center"><sub>36 秒 · 1080p</sub></p>
@@ -76,25 +76,25 @@ npx page-harness                                    # 不给地址：打开书�
 
 **只有取点和意见。** 加 `--no-agent` 就不启动 Agent CLI。点元素留评论或者直接改，回复、解决、按页面审批都行。[详细 →](#仅评审--no-agent)
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/review-only-zh.png" width="720" alt="仅评审模式下的页面意见面板"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/review-only-zh.png" width="720" alt="仅评审模式下的页面意见面板"></p>
 
 ### 书签主页
 
 **就一个按钮，拖走就行。** 不给地址直接跑 `npx page-harness`，主页上只有一个 **✦ Page-Harness** 按钮，拖到书签栏。[详细 →](#书签不给地址)
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/home-zh.png" width="520" alt="主页上的 ✦ Page-Harness 按钮"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/home-zh.png" width="520" alt="主页上的 ✦ Page-Harness 按钮"></p>
 
 ### 任意网站留意见
 
 **打开哪个网页都能点。** 底栏直接注入到当前页面（放在 Shadow DOM 里，不走代理），意见存到本机服务，按网站分好。
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/bookmarklet-zh.png" width="720" alt="书签注入到普通页面上的底栏"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/bookmarklet-zh.png" width="720" alt="书签注入到普通页面上的底栏"></p>
 
 ### 我的标记
 
 **所有网站的意见都在这。** 左边网站，右边这个网站的意见，可以导出 Markdown、导出 JSON，或者复制 Prompt 丢给 Agent。
 
-<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/home-notes-zh.png" width="720" alt="我的标记页"></p>
+<p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/home-notes-zh.png" width="720" alt="我的标记页"></p>
 
 ## 原理
 
