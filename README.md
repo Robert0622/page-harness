@@ -25,12 +25,10 @@
 </p>
 
 <p align="center">
-  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero.webp" width="720" alt="page-harness">
+  <img src="docs/hero.webp" width="720" alt="page-harness">
 </p>
 
-<p align="center">
-  <video src="https://cdn.jsdelivr.net/npm/page-harness@0.1.8/docs/hero.mp4" width="720" controls playsinline></video>
-</p>
+https://github.com/user-attachments/assets/113f12e7-c287-45d2-9f27-cb9158c539b2
 
 ## Overview
 
