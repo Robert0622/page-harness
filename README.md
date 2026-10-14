@@ -28,6 +28,10 @@
   <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero.webp" width="720" alt="page-harness">
 </p>
 
+<p align="center">
+  <video src="https://cdn.jsdelivr.net/npm/page-harness@0.1.8/docs/hero.mp4" width="720" controls playsinline></video>
+</p>
+
 ## Overview
 
 **Turn any running web page into a workspace for your coding agent.**
