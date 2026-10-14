@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      # npm trusted publishing (OIDC) needs npm >= 11.5.1
+      - run: npm install -g npm@latest
+      - name: Check tag matches package.json version
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          [ "$pkg" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != package.json $pkg"; exit 1; }
+      - run: npm ci
+      - run: npm test
+      - run: npm publish --access public
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
