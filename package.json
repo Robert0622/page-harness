@@ -17,6 +17,7 @@
     "type": "git",
     "url": "git+https://github.com/Tencent/page-harness.git"
   },
+  "homepage": "https://cocofhu.github.io/page-harness-site/",
   "type": "module",
   "bin": {
     "page-harness": "dist/cli.js"
