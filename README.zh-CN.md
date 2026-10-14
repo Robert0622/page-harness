@@ -25,10 +25,8 @@
 </p>
 
 <p align="center">
-  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero-zh.webp" width="720" alt="page-harness 宣传视频（36 秒）">
+  <video src="https://cdn.jsdelivr.net/npm/page-harness@0.1.8/docs/hero-zh.mp4" poster="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero-zh.webp" width="720" controls playsinline></video>
 </p>
-
-<p align="center"><sub>36 秒 · 1080p</sub></p>
 
 ## 概览
 

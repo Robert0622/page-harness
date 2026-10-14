@@ -25,10 +25,8 @@
 </p>
 
 <p align="center">
-  <img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero.webp" width="720" alt="page-harness promo video (0:30)">
+  <video src="https://cdn.jsdelivr.net/npm/page-harness@0.1.8/docs/hero.mp4" poster="https://cdn.jsdelivr.net/npm/page-harness@0.1.6/docs/hero.webp" width="720" controls playsinline></video>
 </p>
-
-<p align="center"><sub>0:30 · 1080p</sub></p>
 
 ## Overview
 
