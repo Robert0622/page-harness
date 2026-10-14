@@ -1,6 +1,5 @@
-<!-- TODO(腾讯开源)：品牌规范定了以后，这里换成腾讯开源横幅（中英各一张），图里不放营销文案。 -->
 <p align="center">
-  <img src="./docs/logo.svg" width="72" alt="page-harness logo">
+  <img src="https://unpkg.com/page-harness@0.1.5/docs/logo.svg" width="72" alt="page-harness logo">
 </p>
 
 <h1 align="center">page-harness</h1>
@@ -9,11 +8,6 @@
   <a href="https://www.npmjs.com/package/page-harness"><img alt="npm page-harness" src="https://img.shields.io/npm/v/page-harness?label=npm&labelColor=16161A&color=7C5CFF&style=flat-square"></a>
   <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-7C5CFF?labelColor=16161A&color=7C5CFF&style=flat-square"></a>
   <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A520.11-7C5CFF?labelColor=16161A&color=7C5CFF&style=flat-square">
-  <!-- TODO(腾讯开源)：仓库地址定了以后打开下面这行（Release / Stars / CI），把 TODO/page-harness 换掉。 -->
-  <!-- <a href="https://github.com/TODO/page-harness/releases"><img alt="Release" src="https://img.shields.io/github/v/release/TODO/page-harness?labelColor=16161A&color=7C5CFF&style=flat-square"></a>
-  <a href="https://github.com/TODO/page-harness/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/TODO/page-harness?labelColor=16161A&color=7C5CFF&style=flat-square"></a>
-  <br/>
-  <a href="https://github.com/TODO/page-harness/actions/workflows/ci.yml"><img alt="ci" src="https://img.shields.io/github/actions/workflow/status/TODO/page-harness/ci.yml?branch=main&label=ci&labelColor=16161A&style=flat-square"></a> -->
 </p>
 
 <p align="center">
@@ -31,16 +25,12 @@
 </p>
 
 <p align="center">
-  <a href="docs/hero-zh.mp4?raw=true">
-    <img src="./docs/hero-zh.webp" width="720" alt="page-harness 宣传视频（36 秒）">
-  </a>
+  <img src="https://unpkg.com/page-harness@0.1.5/docs/hero-zh.webp" width="720" alt="page-harness 宣传视频（36 秒）">
 </p>
 
-<p align="center"><sub>36 秒 · 1080p · 点击打开 mp4（有声音）</sub></p>
+<p align="center"><sub>36 秒 · 1080p</sub></p>
 
 ## 概览
-
-> **TODO（腾讯开源）：** 腾讯 logo、署名和合规说明待确认；仓库地址暂用占位 `https://github.com/TODO/page-harness`。
 
 **把正在跑的网页，直接变成编码 Agent 的工作台。**
 
@@ -86,25 +76,25 @@ npx page-harness                                    # 不给地址：打开书�
 
 **只有取点和意见。** 加 `--no-agent` 就不启动 Agent CLI。点元素留评论或者直接改，回复、解决、按页面审批都行。[详细 →](#仅评审--no-agent)
 
-<p align="center"><img src="./docs/review-only-zh.png" width="720" alt="仅评审模式下的页面意见面板"></p>
+<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/review-only-zh.png" width="720" alt="仅评审模式下的页面意见面板"></p>
 
 ### 书签主页
 
 **就一个按钮，拖走就行。** 不给地址直接跑 `npx page-harness`，主页上只有一个 **✦ Page-Harness** 按钮，拖到书签栏。[详细 →](#书签不给地址)
 
-<p align="center"><img src="./docs/home-zh.png" width="520" alt="主页上的 ✦ Page-Harness 按钮"></p>
+<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/home-zh.png" width="520" alt="主页上的 ✦ Page-Harness 按钮"></p>
 
 ### 任意网站留意见
 
 **打开哪个网页都能点。** 底栏直接注入到当前页面（放在 Shadow DOM 里，不走代理），意见存到本机服务，按网站分好。
 
-<p align="center"><img src="./docs/bookmarklet-zh.png" width="720" alt="书签注入到普通页面上的底栏"></p>
+<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/bookmarklet-zh.png" width="720" alt="书签注入到普通页面上的底栏"></p>
 
 ### 我的标记
 
 **所有网站的意见都在这。** 左边网站，右边这个网站的意见，可以导出 Markdown、导出 JSON，或者复制 Prompt 丢给 Agent。
 
-<p align="center"><img src="./docs/home-notes-zh.png" width="720" alt="我的标记页"></p>
+<p align="center"><img src="https://unpkg.com/page-harness@0.1.5/docs/home-notes-zh.png" width="720" alt="我的标记页"></p>
 
 ## 原理
 
@@ -355,16 +345,12 @@ npm run build && npm run test:e2e   # 基于示例应用的浏览器测试
 
 ## 参与贡献
 
-欢迎到 `https://github.com/TODO/page-harness`（仓库地址定了再换）提 Issue 和 PR。
+欢迎到 [Tencent/page-harness](https://github.com/Tencent/page-harness) 提 Issue 和 PR。
 
 - **流程：** Fork → 开分支 → 提交 → 开 PR
 - **推之前跑一下：** `npm run lint`、`npm run typecheck`、`npm test`；动了界面的话再跑 `npm run build && npm run test:e2e`
-
-<!-- TODO(腾讯开源)：仓库地址定了以后放贡献者头像：
-[![Contributors](https://contrib.rocks/image?repo=TODO/page-harness)](https://github.com/TODO/page-harness/graphs/contributors) -->
 
 ## 许可证
 
 [MIT](./LICENSE)。打包进来的第三方代码见 [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md)。
 
-<!-- TODO(腾讯开源)：版权方 / 腾讯署名，以及需要的合规或安全联系方式放这里。 -->
