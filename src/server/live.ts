@@ -105,6 +105,12 @@ export class LiveManager extends EventEmitter {
         if (s.source === 'patch' && !s.variants.some((v) => v.index === req.variant)) throw new LiveError('choose a candidate to refine')
         this.set(s, { status: 'refining', pending: req, error: undefined })
         break
+      case 'revise':
+        if (s.status !== 'ready') throw new LiveError('candidates are not ready')
+        if (!req.prompt?.trim()) throw new LiveError('describe what to change')
+        if (s.kind === 'insert') throw new LiveError('refine one inserted candidate instead')
+        this.set(s, { status: 'generating', pending: req, error: undefined })
+        break
       case 'accept':
         if (s.status !== 'ready') throw new LiveError('candidates are not ready')
         if (req.variant === undefined || !s.variants.some((v) => v.index === req.variant)) throw new LiveError('choose a candidate to accept')
@@ -253,6 +259,8 @@ function summarize(s: LiveSession, req: LiveRequest, retry: boolean): string {
       return `${pre}Live · page — ${req.prompt ?? ''}`
     case 'refine':
       return `${pre}Live · refine #${req.variant} — ${req.prompt ?? ''}`
+    case 'revise':
+      return `${pre}Live · revise all — ${req.prompt ?? ''}`
     case 'accept':
       return `${pre}Live · accept #${req.variant}`
     case 'discard':
@@ -268,8 +276,8 @@ function summarize(s: LiveSession, req: LiveRequest, retry: boolean): string {
 export function requestText(s: LiveSession, req: LiveRequest): string {
   const lines = ['## Live request', `sid: ${s.sid}`, `op: ${req.op}`]
   if (s.source === 'patch') lines.push('render: page changes (no source) with live_patch_variants')
-  if (req.op === 'generate' || req.op === 'insert' || req.op === 'steer') {
-    lines.push(`count: ${s.count}`, `scope: ${req.op === 'steer' ? 'page' : 'element'}`)
+  if (req.op === 'generate' || req.op === 'insert' || req.op === 'steer' || req.op === 'revise') {
+    lines.push(`count: ${s.count}`, `scope: ${(req.op === 'revise' ? s.kind : req.op) === 'steer' ? 'page' : 'element'}`)
     if (req.action) lines.push(`action: ${req.action}`)
     if (req.position) lines.push(`position: ${req.position}`)
   }
@@ -277,7 +285,7 @@ export function requestText(s: LiveSession, req: LiveRequest): string {
   if (req.params && Object.keys(req.params).length) lines.push(`params: ${JSON.stringify(req.params)}`)
   if (req.url || s.url) lines.push(`url: ${req.url ?? s.url}`)
   const t = req.target ?? s.target
-  if (t && (req.op === 'generate' || req.op === 'insert' || req.op === 'mount_failed' || req.op === 'refine')) {
+  if (t && (req.op === 'generate' || req.op === 'insert' || req.op === 'mount_failed' || req.op === 'refine' || req.op === 'revise')) {
     lines.push('target:', `  selector: ${t.selector}`, `  tag: ${t.tagName.toLowerCase()}`)
     if (t.id) lines.push(`  id: ${t.id}`)
     if (t.classes.length) lines.push(`  classes: ${t.classes.join(' ')}`)
@@ -290,6 +298,13 @@ export function requestText(s: LiveSession, req: LiveRequest): string {
     const v = s.variants.find((x) => x.index === req.variant)
     if (v) lines.push(`variant label: ${v.label}`)
     if (v?.changes) lines.push('variant changes:', '```json', JSON.stringify(v.changes.map(({ selector, patch }) => ({ selector, ...patch }))), '```')
+  }
+  if (req.op === 'revise') {
+    if (s.prompt) lines.push(`original request: ${s.prompt}`)
+    for (const v of s.variants) {
+      if (!v.changes) continue
+      lines.push(`current candidate ${v.index} (${v.label}):`, '```json', JSON.stringify(v.changes.map(({ selector, patch }) => ({ selector, ...patch }))), '```')
+    }
   }
   if (req.prompt) lines.push(`request: ${req.prompt}`)
   if (req.notes) lines.push(`notes: ${req.notes}`)

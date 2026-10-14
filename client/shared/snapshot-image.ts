@@ -35,8 +35,47 @@ function hasInk(canvas: HTMLCanvasElement): boolean {
   return false
 }
 
-function encode(canvas: HTMLCanvasElement): string | undefined {
-  let scale = Math.min(1, MAX_W / Math.max(1, canvas.width), MAX_H / Math.max(1, canvas.height))
+/** Crops the white margin around the ink, so a full-width heading is not a tiny word in a wide strip. */
+function trim(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return canvas
+  const { width: w, height: h } = canvas
+  let data: Uint8ClampedArray
+  try {
+    data = ctx.getImageData(0, 0, w, h).data
+  } catch {
+    return canvas
+  }
+  let x0 = w
+  let y0 = h
+  let x1 = -1
+  let y1 = -1
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4
+      if (data[i] > 245 && data[i + 1] > 245 && data[i + 2] > 245) continue
+      if (x < x0) x0 = x
+      if (x > x1) x1 = x
+      if (y < y0) y0 = y
+      if (y > y1) y1 = y
+    }
+  }
+  if (x1 < 0) return canvas
+  x0 = Math.max(0, x0 - PAD)
+  y0 = Math.max(0, y0 - PAD)
+  x1 = Math.min(w - 1, x1 + PAD)
+  y1 = Math.min(h - 1, y1 + PAD)
+  if (x0 === 0 && y0 === 0 && x1 === w - 1 && y1 === h - 1) return canvas
+  const out = document.createElement('canvas')
+  out.width = x1 - x0 + 1
+  out.height = y1 - y0 + 1
+  out.getContext('2d')?.drawImage(canvas, x0, y0, out.width, out.height, 0, 0, out.width, out.height)
+  return out
+}
+
+function encode(source: HTMLCanvasElement, limits = { w: MAX_W, h: MAX_H, bytes: MAX_IMG, trim: true }): string | undefined {
+  const canvas = limits.trim ? trim(source) : source
+  let scale = Math.min(1, limits.w / Math.max(1, canvas.width), limits.h / Math.max(1, canvas.height))
   for (let q = 0.72; q >= 0.45 && scale >= 0.2; q -= 0.12) {
     const out = document.createElement('canvas')
     out.width = Math.max(1, Math.round(canvas.width * scale))
@@ -48,7 +87,7 @@ function encode(canvas: HTMLCanvasElement): string | undefined {
     ctx.drawImage(canvas, 0, 0, out.width, out.height)
     try {
       const url = out.toDataURL('image/jpeg', q)
-      if (url.startsWith('data:image/jpeg') && url.length <= MAX_IMG) return url
+      if (url.startsWith('data:image/jpeg') && url.length <= limits.bytes) return url
     } catch {
       return undefined
     }
@@ -126,6 +165,79 @@ export async function snapshotLook(el: HTMLElement): Promise<{ html: string; ima
   const html = snapshotHtml(el)
   const image = await raster(el)
   return image ? { html, image } : { html }
+}
+
+const PAGE_W = 900
+const PAGE_MAX_H = 6000
+const PAGE_MAX_IMG = 240_000
+const PAGE_LIMITS = { w: PAGE_W, h: 2400, bytes: PAGE_MAX_IMG, trim: false }
+
+export interface PageShot {
+  canvas: HTMLCanvasElement
+  scale: number
+}
+
+/** An element's box in page coordinates, measured in the same state the page shot was taken in. */
+export interface PageBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export function pageBox(el: Element): PageBox {
+  const r = el.getBoundingClientRect()
+  return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }
+}
+
+/**
+ * Renders the page without the overlay. html2canvas clones the DOM before its first await,
+ * so the caller may change the page again as soon as this returns.
+ */
+export function pageShot(): Promise<PageShot | undefined> {
+  const doc = document.documentElement
+  const w = Math.max(doc.scrollWidth, doc.clientWidth)
+  const h = Math.min(PAGE_MAX_H, Math.max(doc.scrollHeight, doc.clientHeight))
+  const scale = Math.min(1, PAGE_W / Math.max(1, w))
+  return html2canvas(doc, {
+    x: 0,
+    y: 0,
+    width: w,
+    height: h,
+    scale,
+    backgroundColor: '#ffffff',
+    useCORS: true,
+    logging: false,
+    imageTimeout: 1500,
+    ignoreElements: (n) => n.hasAttribute?.('data-page-harness') ?? false,
+  }).then(
+    (canvas) => ({ canvas, scale }),
+    () => undefined,
+  )
+}
+
+/** A window of the page shot around the box, with the box outlined. */
+export function markPage(shot: PageShot, box: PageBox): string | undefined {
+  const { canvas, scale } = shot
+  const bx = box.x * scale
+  const by = box.y * scale
+  if (!box.w || !box.h || by > canvas.height) return undefined
+  const winH = Math.min(canvas.height, Math.round(innerHeight * 2.5 * scale))
+  const y0 = Math.min(Math.max(0, Math.round(by + (box.h * scale) / 2 - winH / 2)), canvas.height - winH)
+  const out = document.createElement('canvas')
+  out.width = canvas.width
+  out.height = winH
+  const ctx = out.getContext('2d')
+  if (!ctx) return undefined
+  ctx.drawImage(canvas, 0, y0, canvas.width, winH, 0, 0, canvas.width, winH)
+  const pad = 6
+  const rect: [number, number, number, number] = [bx - pad, by - y0 - pad, box.w * scale + pad * 2, box.h * scale + pad * 2]
+  ctx.fillStyle = 'rgba(123, 97, 255, 0.12)'
+  ctx.fillRect(...rect)
+  ctx.lineWidth = 3
+  ctx.strokeStyle = '#7b61ff'
+  ctx.strokeRect(...rect)
+  return encode(out, PAGE_LIMITS)
 }
 
 export async function snapshotPair(el: HTMLElement, revert: () => void, restore: () => void): Promise<ReviewLook> {

@@ -57,7 +57,7 @@ export const LIVE_ACTIONS = [
 ] as const
 export type LiveAction = (typeof LIVE_ACTIONS)[number]
 
-export type LiveOp = 'generate' | 'insert' | 'steer' | 'refine' | 'accept' | 'discard' | 'retry' | 'mount_failed'
+export type LiveOp = 'generate' | 'insert' | 'steer' | 'refine' | 'revise' | 'accept' | 'discard' | 'retry' | 'mount_failed'
 export type LiveDisplay = 'inplace' | 'compare'
 
 export interface LiveRequest {
@@ -341,6 +341,9 @@ export interface ReviewLook {
   afterHtml?: string
   beforeImage?: string
   afterImage?: string
+  /** The page around the element, with the element outlined. */
+  beforePage?: string
+  afterPage?: string
 }
 
 /** What an element looked like when it was annotated; used to find it again after the page changes. */
@@ -369,6 +372,8 @@ export interface ReviewItem {
   /** Display number, stable for the item's lifetime. */
   n: number
   kind: 'note' | 'patch'
+  /** Site the note belongs to, e.g. `shop.example.com` or `localhost:5173`. */
+  host: string
   /** Normalised path (+ search) of the page the item belongs to. */
   path: string
   selector: string
@@ -389,6 +394,8 @@ export interface ReviewItem {
 }
 
 export interface ReviewApproval {
+  /** Site the verdict belongs to. Same key as ReviewItem.host. */
+  host: string
   path: string
   author: ReviewAuthor
   status: 'approved' | 'changes'
@@ -399,6 +406,8 @@ export interface ReviewApproval {
 export interface ReviewDraft {
   kind: 'note' | 'patch'
   url: string
+  /** Site host. The proxy overlay sends the target host; a bookmarklet sends location.host. */
+  host?: string
   selector: string
   anchor?: ReviewAnchor
   label?: string
@@ -497,9 +506,9 @@ export type ClientMsg =
   | { type: 'review_reply'; id: string; text: string }
   | { type: 'review_edit'; id: string; note: string }
   | { type: 'review_status'; id: string; status: 'open' | 'resolved' }
-  | { type: 'review_approve'; url: string; status: 'approved' | 'changes' | null }
+  | { type: 'review_approve'; url: string; status: 'approved' | 'changes' | null; host?: string }
   | { type: 'set_name'; name: string }
-  | { type: 'review_clear' }
+  | { type: 'review_clear'; host?: string }
   | { type: 'review_export' }
   | { type: 'live_op'; request: LiveRequest }
   | { type: 'ping' }
@@ -531,8 +540,8 @@ export type ToPanel =
   | { type: 'ph:review-reply'; id: string; text: string }
   | { type: 'ph:review-edit'; id: string; note: string }
   | { type: 'ph:review-status'; id: string; status: 'open' | 'resolved' }
-  | { type: 'ph:review-approve'; url: string; status: 'approved' | 'changes' | null }
-  | { type: 'ph:review-clear' }
+  | { type: 'ph:review-approve'; url: string; status: 'approved' | 'changes' | null; host?: string }
+  | { type: 'ph:review-clear'; host?: string }
   | { type: 'ph:review-export' }
 
 export type ToPage =

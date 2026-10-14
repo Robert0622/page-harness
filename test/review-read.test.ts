@@ -11,6 +11,7 @@ const JPEG = `data:image/jpeg;base64,${'a'.repeat(80)}`
 
 function item(partial: Partial<ReviewItem> & Pick<ReviewItem, 'id' | 'n' | 'selector'> & { patch?: ReviewPatch }): ReviewItem {
   return {
+    host: '',
     kind: 'patch',
     path: '/',
     note: partial.note ?? 'Live: sample',
@@ -121,6 +122,34 @@ describe('list grouping', () => {
     expect(authorNotes(note)).toEqual([])
     expect(note.title).not.toBe('p')
     expect(authorNotes(entries.find((e) => e.n === 14)!)).toEqual([])
+  })
+
+  it('writes English sentences and export labels when asked', () => {
+    const note = stroustrup().find((i) => i.kind === 'note')!
+    const [entry] = readerEntries([note], 'en')
+    expect(entry.where).toContain('About')
+    expect(entry.where).toContain('Technical Fellow')
+    expect(entry.where).not.toContain('关于')
+    const sized = item({
+      id: 'code',
+      n: 3,
+      selector: 'code',
+      note: 'Live: size',
+      anchor: { tag: 'code', text: 'std::basic_istream' },
+      patch: { style: { 'font-size': '22px' } },
+      author: { id: 'owner', name: '匿名', kind: 'human' },
+    })
+    const [change] = readerEntries([sized], 'en')
+    expect(change.say).toContain('std::basic_istream')
+    expect(change.say).toContain('22px')
+    expect(change.say).not.toContain('关于')
+    expect(change.say).not.toContain('像素')
+    const md = reviewMarkdown('http://docs.example/', [sized], [], 'en')
+    expect(md).toContain('Selector and style')
+    expect(md).toContain('By Anonymous')
+    expect(md).not.toContain('选择器和样式')
+    expect(md).not.toContain('改前')
+    expect(md).not.toContain('匿名')
   })
 
   it('keeps a free-form patch note beside the sentence (g1.2)', () => {

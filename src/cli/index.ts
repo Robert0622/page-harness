@@ -7,23 +7,27 @@ import { parseArgs } from 'node:util'
 import { releaseAllCursorMcp } from '../agents/cursor'
 import { killAllAgents } from '../agents/util'
 import { startHarness } from '../server/harness'
+import { parseLang } from '../shared/lang'
 import { log } from '../server/log'
 
 const HELP = `page-harness — Pick, Chat and Artifacts on top of any running frontend, driven by your local coding agent.
+Without a URL it starts review-only: a home page with a bookmarklet, and notes grouped by site. No agent.
 
 Usage
-  page-harness <frontend-url> [options]
+  page-harness [frontend-url] [options]
 
 Examples
   npx page-harness http://localhost:5173
   npx page-harness 3000 --project ../web --agent codex
+  npx page-harness --no-agent http://localhost:5173
+  npx page-harness
 
 Options
   --project <dir>        Project the agent works in (default: current directory)
   --agent <id>           claude | codex | cursor | codebuddy | opencode (default: first one installed)
   --model <name>         Default model for new chats
   --port <n>             App port: the proxied frontend (default 17990)
-  --control-port <n>     Panel / API port (default: app port + 1)
+  --control-port <n>     Panel / API port (default: app port + 1, or 17991 with no URL)
   --host <addr>          Listen address (default 127.0.0.1)
   --allow-host <name>    Extra Host header to accept (repeatable), e.g. a LAN name
   --keep-host            Forward the browser's Host header to the target
@@ -34,6 +38,10 @@ Options
   --live-guard-hook      Install a git pre-commit hook that rejects Live candidate markers
   --review               No source for this page: the agent leaves notes and page changes instead of editing files
                          (default for public sites; --source forces source mode)
+  --no-agent             Review only. Do not detect or start an agent CLI. The dock is Pick and Notes
+                         (comment, edit, reply, resolve, approve). No Chat, Artifacts, Live or page control.
+                         Implied when no frontend URL is given.
+  --lang <zh|en>         Home page and dock language. Omit it and each browser keeps its own.
   --share                Listen on the network and print an invite link: teammates join as reviewers
                          (comment, reply, resolve, approve, edit text/style in review mode; never the agent)
   --verbose / --quiet
@@ -67,6 +75,12 @@ function portFree(port: number, host: string): Promise<boolean> {
     s.once('error', () => resolve(false))
     s.listen(port, host, () => s.close(() => resolve(true)))
   })
+}
+
+async function pickControlPort(host: string, control?: number): Promise<number> {
+  if (control !== undefined) return control
+  for (let p = 17991; p < 18091; p++) if (await portFree(p, host)) return p
+  return 17991
 }
 
 async function pickPorts(host: string, app?: number, control?: number): Promise<[number, number]> {
@@ -117,6 +131,8 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       'live-guard-hook': { type: 'boolean' },
       review: { type: 'boolean' },
       source: { type: 'boolean' },
+      'no-agent': { type: 'boolean' },
+      lang: { type: 'string' },
       share: { type: 'boolean' },
       verbose: { type: 'boolean' },
       quiet: { type: 'boolean' },
@@ -128,23 +144,56 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     console.log(version())
     return
   }
-  if (values.help || !positionals[0]) {
+  if (values.help) {
     process.stdout.write(HELP)
-    if (!values.help) process.exitCode = 1
     return
   }
   if (values.verbose) log.setVerbose(true)
   if (values.quiet) log.setQuiet(true)
+  const lang = parseLang(values.lang)
 
-  const target = normalizeTarget(positionals[0])
+  const rawTarget = positionals[0]
+  if (!rawTarget) {
+    if (values.source) throw new Error('--source needs a frontend URL')
+    if (values.share) throw new Error('--share needs a frontend URL')
+    if (values.port) throw new Error('--port is the proxy port; with no URL only --control-port is used')
+    if (values.agent) log.warn('--agent is ignored when there is no frontend URL (review-only, no agent)')
+    const project = path.resolve(values.project ?? process.cwd())
+    if (!existsSync(project) || !statSync(project).isDirectory()) throw new Error(`project directory not found: ${project}`)
+    const host = values.host ?? '127.0.0.1'
+    const controlPort = await pickControlPort(host, intOpt(values['control-port'], 'control-port'))
+    const h = await startHarness({
+      project,
+      host,
+      controlPort,
+      allowHosts: values['allow-host'],
+      publicScheme: schemeOf(values['public-scheme']),
+      noAgent: true,
+      lang,
+    })
+    log.info(`v${version()}`)
+    process.stderr.write(
+      [
+        `  Home     ${log.bold(h.controlUrl)}`,
+        `  Project  ${project}`,
+        `  Mode     review only ${log.dim('(no agent, no proxy — drag the bookmarklet onto any page)')}`,
+        '',
+      ].join('\n'),
+    )
+    if (values.open) openBrowser(h.controlUrl)
+    return installShutdown(h)
+  }
+
+  const target = normalizeTarget(rawTarget)
   const project = path.resolve(values.project ?? process.cwd())
   if (!existsSync(project) || !statSync(project).isDirectory()) throw new Error(`project directory not found: ${project}`)
   const host = values.host ?? (values.share ? '0.0.0.0' : '127.0.0.1')
   const [appPort, controlPort] = await pickPorts(host, intOpt(values.port, 'port'), intOpt(values['control-port'], 'control-port'))
   if (appPort === controlPort) throw new Error('--port and --control-port must differ')
   if (values.review && values.source) throw new Error('use either --review or --source')
-  const publicScheme = values['public-scheme'] ?? 'http'
-  if (publicScheme !== 'http' && publicScheme !== 'https') throw new Error('--public-scheme must be http or https')
+  if (values['no-agent'] && values.source) throw new Error('--no-agent is review-only and cannot be combined with --source')
+  const publicScheme = schemeOf(values['public-scheme'])
+  const noAgent = !!values['no-agent']
 
   const h = await startHarness({
     target,
@@ -152,7 +201,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     host,
     appPort,
     controlPort,
-    agent: values.agent,
+    agent: noAgent ? undefined : values.agent,
     model: values.model,
     allowHosts: values['allow-host'],
     keepHost: values['keep-host'],
@@ -167,28 +216,47 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     liveGuardHook: values['live-guard-hook'],
     mode: values.review ? 'review' : values.source ? 'source' : undefined,
     share: values.share,
+    noAgent,
+    lang,
   })
 
   const agentLine = h.agents
     .map((a) => (a.available ? `${a.id === h.defaultAgent ? log.bold(a.id) : a.id}${a.version ? ` ${log.dim(a.version)}` : ''}` : log.dim(`${a.id} (not found)`)))
     .join('  ')
   log.info(`v${version()}`)
+  const modeLine = h.noAgent
+    ? `review ${log.dim('(no agent: Pick and Notes only)')}`
+    : h.mode === 'review'
+      ? `review ${log.dim('(no source: notes, page changes, Live candidates as page changes)')}`
+      : 'source'
   process.stderr.write(
     [
       `  Open     ${log.bold(h.appUrl)}  ${log.dim(`→ ${target.href}`)}`,
       `  History  ${h.controlUrl}/__ph/history`,
       `  Project  ${project}`,
-      `  Mode     ${h.mode === 'review' ? `review ${log.dim('(no source: notes, page changes, Live candidates as page changes)')}` : 'source'}`,
-      `  Agents   ${agentLine}`,
+      `  Mode     ${modeLine}`,
+      ...(h.noAgent ? [] : [`  Agents   ${agentLine}`]),
       ...(h.shareUrl ? [`  Share    ${log.bold(h.shareUrl)}  ${log.dim('(teammates on your network join as reviewers: comment, reply, approve; they cannot run the agent)')}`] : []),
-      ...(!h.shareUrl && !LOCAL_HOSTS.has(host)
+      ...(!h.noAgent && !h.shareUrl && !LOCAL_HOSTS.has(host)
         ? [`  ${log.bold('Warning')}  listening on ${host} without --share: anyone who can reach these ports gets full control, including running the agent. Use --share to give others reviewer access only.`]
+        : []),
+      ...(h.noAgent && !LOCAL_HOSTS.has(host)
+        ? [`  ${log.bold('Warning')}  listening on ${host}: anyone who can reach the control port can read and write review notes.`]
         : []),
       '',
     ].join('\n'),
   )
   if (values.open) openBrowser(h.appUrl)
+  installShutdown(h)
+}
 
+function schemeOf(raw: string | undefined): 'http' | 'https' {
+  const s = raw ?? 'http'
+  if (s !== 'http' && s !== 'https') throw new Error('--public-scheme must be http or https')
+  return s
+}
+
+function installShutdown(h: { close(): Promise<void> }) {
   let closing = false
   const shutdown = async () => {
     if (closing) return process.exit(0)

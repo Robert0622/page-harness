@@ -133,7 +133,12 @@ export function createFakeRunner(): AgentRunner {
             const variants =
               live.op === 'refine'
                 ? [{ label: 'Bigger', changes: [{ selector: target, style: { 'font-size': '40px' } }] }]
-                : [
+                : live.op === 'revise'
+                  ? [
+                      { label: 'Airy', changes: [{ selector: target, style: { padding: '48px 0' } }] },
+                      { label: 'Roomy', changes: [{ selector: target, style: { padding: '72px 0' } }] },
+                    ]
+                  : [
                     { label: 'Bold', changes: [{ selector: target, style: { 'font-weight': '800' } }, { selector: '.hero-sub', text: 'Bold subtitle' }] },
                     { label: 'Soft', changes: [{ selector: target, style: { opacity: '0.6' }, text: 'Soft title' }] },
                   ]

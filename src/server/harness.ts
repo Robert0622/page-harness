@@ -4,10 +4,10 @@ import os from 'node:os'
 import path from 'node:path'
 import { AGENT_ORDER, AgentRegistry, type AgentId } from '../agents'
 import { recoverCursorMcp, releaseAllCursorMcp } from '../agents/cursor'
-import type { AgentInfo, HarnessMode } from '../shared/protocol'
+import type { AgentInfo, HarnessMode, Lang } from '../shared/protocol'
 import { startServers } from './app'
 import { ArtifactStore } from './artifacts'
-import { Auth, type PublicScheme } from './auth'
+import { randomToken, type PublicScheme, Auth } from './auth'
 import { Gateway } from './gateway'
 import { LiveManager, MarkerGuard } from './live'
 import { log } from './log'
@@ -17,10 +17,12 @@ import { Team } from './team'
 import { Uploads } from './uploads'
 
 export interface HarnessOptions {
-  target: URL
+  /** Missing when page-harness is started with no URL: control server only, bookmarklet. */
+  target?: URL
   project: string
   host: string
-  appPort: number
+  /** Unused without a target. */
+  appPort?: number
   controlPort: number
   agent?: string
   model?: string
@@ -34,6 +36,10 @@ export interface HarnessOptions {
   share?: boolean
   /** Scheme browsers use to reach both ports, "https" behind a TLS-terminating load balancer. */
   publicScheme?: PublicScheme
+  /** Pick and Notes only. Do not detect or start an agent CLI. Implied when there is no target. */
+  noAgent?: boolean
+  /** Home page and dock language. Omitted: the browser language, as before. */
+  lang?: Lang
 }
 
 export interface Harness {
@@ -44,6 +50,11 @@ export interface Harness {
   mode: HarnessMode
   /** Invite link for teammates (with share). */
   shareUrl?: string
+  /** No frontend URL: the control port serves the home page and the bookmarklet. */
+  bookmarklet: boolean
+  noAgent: boolean
+  /** Secret the bookmarklet sends so other websites cannot call the review API. */
+  bookmarkletToken: string
   gateway: Gateway
   auth: Auth
   close(): Promise<void>
@@ -56,37 +67,46 @@ export async function startHarness(o: HarnessOptions): Promise<Harness> {
   if (!existsSync(path.join(dataDir, '.gitignore'))) writeFileSync(path.join(dataDir, '.gitignore'), '*\n')
   if (recoverCursorMcp(o.project)) log.warn('restored .cursor/mcp.json left behind by a previous run')
 
+  const bookmarklet = !o.target
+  const noAgent = bookmarklet || !!o.noAgent
+  if (bookmarklet && o.share) throw new Error('--share needs a frontend URL')
+  if (o.target && o.appPort === undefined) throw new Error('appPort is required when a frontend URL is set')
   const registry = new AgentRegistry({ paths: o.agentPaths })
-  const agents = await registry.detect()
-  let defaultAgent = o.agent
-  if (defaultAgent) {
-    if (!registry.get(defaultAgent)) throw new Error(`unknown agent "${defaultAgent}"; use ${AGENT_ORDER.join(', ')}`)
-    if (!registry.available(defaultAgent)) log.warn(`${defaultAgent} CLI not found; chats will fail until it is installed (or pass --${defaultAgent}-path)`)
-  } else {
-    defaultAgent = registry.firstAvailable()
-    if (!defaultAgent) {
-      log.warn('no agent CLI found (claude, codex, cursor-agent, codebuddy or opencode). The panel will open, but chats cannot run until one is installed.')
-      defaultAgent = 'claude'
+  let agents: AgentInfo[] = []
+  let defaultAgent = ''
+  if (!noAgent) {
+    agents = await registry.detect()
+    defaultAgent = o.agent ?? ''
+    if (defaultAgent) {
+      if (!registry.get(defaultAgent)) throw new Error(`unknown agent "${defaultAgent}"; use ${AGENT_ORDER.join(', ')}`)
+      if (!registry.available(defaultAgent)) log.warn(`${defaultAgent} CLI not found; chats will fail until it is installed (or pass --${defaultAgent}-path)`)
+    } else {
+      defaultAgent = registry.firstAvailable() ?? ''
+      if (!defaultAgent) {
+        log.warn('no agent CLI found (claude, codex, cursor-agent, codebuddy or opencode). The panel will open, but chats cannot run until one is installed.')
+        defaultAgent = 'claude'
+      }
     }
   }
 
   const team = new Team(dataDir, !!o.share)
-  const auth = new Auth({ host: o.host, appPort: o.appPort, controlPort: o.controlPort, extraHosts: o.allowHosts, team, publicScheme: o.publicScheme })
+  const auth = new Auth({ host: o.host, appPort: o.appPort ?? 0, controlPort: o.controlPort, extraHosts: o.allowHosts, team, publicScheme: o.publicScheme })
   const artifacts = new ArtifactStore(dataDir)
   const uploads = new Uploads(dataDir)
-  const mode = o.mode ?? detectMode(o.target)
+  const mode: HarnessMode = noAgent ? 'review' : (o.mode ?? detectMode(o.target!))
   const live = new LiveManager(dataDir, mode === 'review')
   const guard = new MarkerGuard(o.project)
   const bridge = new PageBridge()
-  const review = new ReviewStore(dataDir)
+  const review = new ReviewStore(dataDir, o.target?.host ?? '')
+  const bookmarkletToken = randomToken(18)
   const shownHost = o.host === '0.0.0.0' || o.host === '::' || o.host === '127.0.0.1' ? 'localhost' : o.host
-  const appUrl = auth.origin(shownHost, o.appPort)
+  const appUrl = auth.origin(shownHost, o.appPort || o.controlPort)
   const shareHost = o.host === '0.0.0.0' || o.host === '::' ? (lanAddress() ?? shownHost) : shownHost
   const shareUrl = o.share ? `${auth.origin(shareHost, o.controlPort)}/__ph/join?t=${team.invite}` : undefined
   const gateway = new Gateway({
     project: o.project,
     dataDir,
-    target: o.target.href,
+    target: o.target?.href ?? '',
     appUrl,
     mcpUrl: `http://${mcpHost(o.host)}:${o.controlPort}/__ph/mcp`,
     registry,
@@ -102,13 +122,14 @@ export async function startHarness(o: HarnessOptions): Promise<Harness> {
     review,
     team,
     shareUrl,
+    noAgent,
   })
-  if (o.liveGuardHook && !(await guard.installHook())) log.warn('--live-guard-hook needs a git repository')
+  if (o.liveGuardHook && !noAgent && !(await guard.installHook())) log.warn('--live-guard-hook needs a git repository')
 
   const servers = await startServers({
     target: o.target,
     host: o.host,
-    appPort: o.appPort,
+    appPort: o.appPort ?? 0,
     controlPort: o.controlPort,
     project: o.project,
     auth,
@@ -118,16 +139,23 @@ export async function startHarness(o: HarnessOptions): Promise<Harness> {
     uploads,
     live,
     keepHost: o.keepHost,
+    noAgent,
+    bookmarklet,
+    bookmarkletToken,
+    lang: o.lang,
   })
 
   let closed = false
   return {
-    appUrl,
+    appUrl: bookmarklet ? auth.origin(shownHost, o.controlPort) : appUrl,
     controlUrl: auth.origin(shownHost, o.controlPort),
     agents,
     defaultAgent,
     mode,
     shareUrl,
+    bookmarklet,
+    noAgent,
+    bookmarkletToken,
     gateway,
     auth,
     async close() {

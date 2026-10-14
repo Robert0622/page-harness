@@ -8,7 +8,7 @@ const agent = { id: 'agent', name: 'Agent', kind: 'agent' as const }
 const T0 = new Date(2026, 9, 10, 16, 30).getTime()
 
 function item(p: Partial<ReviewItem> & Pick<ReviewItem, 'id' | 'n'>): ReviewItem {
-  return { kind: 'note', path: '/', selector: 'body', note: '', author: human, status: 'open', replies: [], createdAt: T0, ...p }
+  return { host: '', kind: 'note', path: '/', selector: 'body', note: '', author: human, status: 'open', replies: [], createdAt: T0, ...p }
 }
 
 const items: ReviewItem[] = [

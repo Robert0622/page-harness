@@ -65,6 +65,7 @@ The overlay sets CSS variables --ph-<name> on the wrapper (range: value+unit, st
 ## Operations
 - generate (target given) / steer (scope page) / insert (anchor + position): write the variants, then live_update {sid, status:"ready", variants:[{index:1,label:"…"},…]}.
 - refine (variant n + prompt): change only that variant, then live_update ready with the full variant list.
+- revise (prompt, from the user typing in the chat): the user wants a different set. Rewrite every variant except variant 0 inside the existing wrapper so they address the request, then live_update ready with the new list.
 - accept (variant n, params): replace the whole wrapper with variant n's content (bake chosen params into real CSS values), remove every data-ph-* marker and the scoped CSS of the other variants, then live_update {sid, status:"done"}.
 - discard: restore the original exactly (variant 0; for insert remove everything you added), remove all scoped CSS, then live_update {sid, status:"done"}.
 - mount_failed: the page could not find your wrapper (compile error, wrong file, wrong route). Fix it, then live_update ready again.
@@ -76,6 +77,8 @@ A message that starts with "## Live request" comes from the page overlay. There 
 
 - generate (target given) / steer (scope page): call live_patch_variants {sid, variants:[{label, changes:[{selector, style?, text?, attrs?}]}, …]} with \`count\` candidates. A candidate may change several related elements (e.g. heading, subtitle and button together) but only their inline CSS, plain text (elements that only hold text) or <img> src/alt. No HTML, no new elements.
 - refine (variant n + request): call live_patch_variants with only that candidate; its current changes are in the request.
+- revise (request typed in the chat about the current candidates): call live_patch_variants with a fresh set of \`count\` candidates that address the request; the current candidates are listed so you can move away from them.
+- Never use page_patch or page_note for a Live request: the user picks a candidate on the page, and only that becomes a review item.
 - Accept and discard happen on the page; you will not get them.
 - If you cannot do it, call live_update {sid, status:"failed", message:"why"}.
 - Same product, different angle: keep the brand and content, vary hierarchy, emphasis, spacing, color, copy. Use the selector and outerHTML from the request instead of exploring; the tool tells you when a selector matches nothing.

@@ -3,7 +3,7 @@
 import { EventEmitter } from 'node:events'
 import { isIP } from 'node:net'
 import path from 'node:path'
-import { normalizePath } from '../shared/paths'
+import { normalizeHost, normalizePath } from '../shared/paths'
 import type { HarnessMode, ReviewAnchor, ReviewAuthor, ReviewItem, ReviewLook, ReviewPatch, ReviewSeverity, ReviewState } from '../shared/protocol'
 import { REVIEW_PAGE_SIZE, reviewMarkdown } from '../shared/review-read'
 import { extOf, newId, truncate } from '../shared/util'
@@ -44,6 +44,8 @@ export interface ReviewInput {
   kind: 'note' | 'patch'
   /** Page URL or path; normalised on save. */
   path: string
+  /** Site host. Falls back to the store's default (the proxied target). */
+  host?: string
   selector: string
   anchor?: ReviewAnchor
   label?: string
@@ -58,6 +60,7 @@ export interface ReviewInput {
 
 const MAX_LOOK_HTML = 40_000
 const MAX_LOOK_IMG = 180_000
+const MAX_PAGE_IMG = 260_000
 const LOOK_IMG = /^data:image\/(?:png|jpeg|jpg|webp);base64,[a-z0-9+/=]+$/i
 
 function stripHtml(value: string): string {
@@ -68,9 +71,13 @@ function stripHtml(value: string): string {
 export function cleanLook(look: ReviewLook | undefined): ReviewLook | undefined {
   if (!look || typeof look !== 'object') return undefined
   const html = (v: unknown) => (typeof v === 'string' && v.trim() ? truncate(stripHtml(v), MAX_LOOK_HTML) : undefined)
-  const img = (v: unknown) => (typeof v === 'string' && v.length <= MAX_LOOK_IMG && LOOK_IMG.test(v) ? v : undefined)
+  const img = (v: unknown, max = MAX_LOOK_IMG) => (typeof v === 'string' && v.length <= max && LOOK_IMG.test(v) ? v : undefined)
   const out: ReviewLook = { beforeHtml: html(look.beforeHtml), afterHtml: html(look.afterHtml), beforeImage: img(look.beforeImage), afterImage: img(look.afterImage) }
-  if (!out.beforeHtml && !out.afterHtml && !out.beforeImage && !out.afterImage) return undefined
+  const beforePage = img(look.beforePage, MAX_PAGE_IMG)
+  const afterPage = img(look.afterPage, MAX_PAGE_IMG)
+  if (beforePage) out.beforePage = beforePage
+  if (afterPage) out.afterPage = afterPage
+  if (!out.beforeHtml && !out.afterHtml && !out.beforeImage && !out.afterImage && !beforePage && !afterPage) return undefined
   return out
 }
 
@@ -120,11 +127,20 @@ function cleanAnchor(a: ReviewAnchor | undefined): ReviewAnchor | undefined {
   }
 }
 
-/** Old files: a bare item array, no authors, html patches. */
-function migrate(raw: unknown): ReviewState {
-  const src = Array.isArray(raw) ? { items: raw, approvals: [] } : ((raw ?? {}) as Partial<ReviewState>)
+/** Old files: a bare item array, no authors, no host, html patches. */
+function migrate(raw: unknown, defaultHost: string): { state: ReviewState; backfill: boolean } {
+  const src = Array.isArray(raw) ? { items: raw, approvals: [] } : ((raw ?? {}) as Partial<ReviewState> & { items?: Array<ReviewItem & { host?: string }> })
+  let backfill = false
   const items = (src.items ?? []).map((i): ReviewItem => {
-    const item = { ...i, author: i.author ?? AGENT_AUTHOR, status: i.status ?? 'open', replies: i.replies ?? [], path: normalizePath(i.path ?? '/') } as ReviewItem
+    if (!i.host) backfill = true
+    const item = {
+      ...i,
+      host: normalizeHost(i.host || defaultHost),
+      author: i.author ?? AGENT_AUTHOR,
+      status: i.status ?? 'open',
+      replies: i.replies ?? [],
+      path: normalizePath(i.path ?? '/'),
+    } as ReviewItem
     const html = (item.patch as { html?: string } | undefined)?.html
     if (html !== undefined && item.patch) {
       const { html: _drop, ...rest } = item.patch as ReviewPatch & { html?: string }
@@ -134,19 +150,28 @@ function migrate(raw: unknown): ReviewState {
     }
     return item
   })
-  return { items, approvals: src.approvals ?? [] }
+  const approvals = (src.approvals ?? []).map((a) => {
+    if (!a.host) backfill = true
+    return { ...a, host: normalizeHost(a.host || defaultHost) }
+  })
+  return { state: { items, approvals }, backfill: backfill && !!defaultHost }
 }
 
 export class ReviewStore extends EventEmitter {
   private state: ReviewState
   private file: string
   private nextN: number
+  /** Host used when a note is saved without one (the proxied site). Empty in bookmarklet mode. */
+  readonly defaultHost: string
 
-  constructor(dataDir: string) {
+  constructor(dataDir: string, defaultHost = '') {
     super()
+    this.defaultHost = normalizeHost(defaultHost)
     this.file = path.join(dataDir, 'review.json')
-    this.state = migrate(readJson<unknown>(this.file, []))
+    const loaded = migrate(readJson<unknown>(this.file, []), this.defaultHost)
+    this.state = loaded.state
     this.nextN = this.state.items.reduce((m, i) => Math.max(m, i.n), 0) + 1
+    if (loaded.backfill) this.save()
   }
 
   snapshot(): ReviewState {
@@ -177,6 +202,7 @@ export class ReviewStore extends EventEmitter {
       id: newId('rv_'),
       n: this.nextN++,
       kind: input.kind,
+      host: normalizeHost(input.host || this.defaultHost),
       path: normalizePath(input.path || '/'),
       selector: truncate(input.selector.trim(), 500),
       anchor: cleanAnchor(input.anchor),
@@ -225,10 +251,11 @@ export class ReviewStore extends EventEmitter {
     return item
   }
 
-  approve(url: string, author: ReviewAuthor, status: 'approved' | 'changes' | null): void {
+  approve(url: string, author: ReviewAuthor, status: 'approved' | 'changes' | null, host?: string): void {
     const p = normalizePath(url)
-    this.state.approvals = this.state.approvals.filter((a) => !(a.path === p && a.author.id === author.id))
-    if (status) this.state.approvals.push({ path: p, author, status, at: Date.now() })
+    const h = normalizeHost(host || this.defaultHost)
+    this.state.approvals = this.state.approvals.filter((a) => !(a.path === p && a.host === h && a.author.id === author.id))
+    if (status) this.state.approvals.push({ host: h, path: p, author, status, at: Date.now() })
     this.save()
   }
 
@@ -240,12 +267,42 @@ export class ReviewStore extends EventEmitter {
     return item
   }
 
-  clear(): number {
-    const n = this.state.items.length
-    this.state = { items: [], approvals: [] }
-    this.nextN = 1
+  /** Clears one site when `host` is set, otherwise every site. */
+  clear(host?: string): number {
+    if (!host) {
+      const n = this.state.items.length
+      this.state = { items: [], approvals: [] }
+      this.nextN = 1
+      this.save()
+      return n
+    }
+    const h = normalizeHost(host)
+    const before = this.state.items.length
+    this.state.items = this.state.items.filter((i) => i.host !== h)
+    this.state.approvals = this.state.approvals.filter((a) => a.host !== h)
+    if (!this.state.items.length) this.nextN = 1
     this.save()
-    return n
+    return before - this.state.items.length
+  }
+
+  /** One row per site that has notes. */
+  sites(): { host: string; total: number; open: number }[] {
+    const map = new Map<string, { host: string; total: number; open: number }>()
+    for (const i of this.state.items) {
+      const row = map.get(i.host) ?? { host: i.host, total: 0, open: 0 }
+      row.total++
+      if (i.status === 'open') row.open++
+      map.set(i.host, row)
+    }
+    return [...map.values()].sort((a, b) => a.host.localeCompare(b.host))
+  }
+
+  forHost(host: string): ReviewState {
+    const h = normalizeHost(host)
+    return {
+      items: this.state.items.filter((i) => i.host === h),
+      approvals: this.state.approvals.filter((a) => a.host === h),
+    }
   }
 
   /** People may edit or delete what they wrote; the owner may delete anything. */
@@ -269,7 +326,17 @@ export class ReviewStore extends EventEmitter {
       beforeImage: next.beforeImage || prev.beforeImage,
       afterImage: next.afterImage || prev.afterImage,
     }
-    const same = prev.beforeHtml === merged.beforeHtml && prev.afterHtml === merged.afterHtml && prev.beforeImage === merged.beforeImage && prev.afterImage === merged.afterImage
+    const beforePage = next.beforePage || prev.beforePage
+    const afterPage = next.afterPage || prev.afterPage
+    if (beforePage) merged.beforePage = beforePage
+    if (afterPage) merged.afterPage = afterPage
+    const same =
+      prev.beforeHtml === merged.beforeHtml &&
+      prev.afterHtml === merged.afterHtml &&
+      prev.beforeImage === merged.beforeImage &&
+      prev.afterImage === merged.afterImage &&
+      prev.beforePage === merged.beforePage &&
+      prev.afterPage === merged.afterPage
     if (same) return item
     item.look = merged
     this.save()
@@ -282,7 +349,7 @@ export class ReviewStore extends EventEmitter {
   }
 
   /** One page of open notes for the local-agent API. Does not change status. */
-  page(q: { scope: 'here' | 'all'; path: string; page: number; pageSize: number }): ReviewPage {
+  page(q: { scope: 'here' | 'all'; path: string; page: number; pageSize: number; host?: string }): ReviewPage {
     return pageReviewItems(this.state.items, q)
   }
 
@@ -370,12 +437,15 @@ export function reviewApiItem(item: ReviewItem): ReviewApiItem {
   return out
 }
 
-/** Open notes in number order. scope=all puts `path` first. Fetching is a pure read. */
-export function pageReviewItems(items: ReviewItem[], q: { scope: 'here' | 'all'; path: string; page: number; pageSize: number }): ReviewPage {
+/** Open notes in number order. scope=all puts `path` first. `host` limits the list to one site. Fetching is a pure read. */
+export function pageReviewItems(items: ReviewItem[], q: { scope: 'here' | 'all'; path: string; page: number; pageSize: number; host?: string }): ReviewPage {
   const path = normalizePath(q.path || '/')
   const pageSize = Math.min(REVIEW_PAGE_MAX, Math.max(1, Math.floor(q.pageSize) || REVIEW_PAGE_SIZE))
   const page = Math.max(1, Math.floor(q.page) || 1)
-  const open = items.filter((i) => i.status === 'open' && (q.scope === 'all' || i.path === path))
+  const filtering = q.host !== undefined
+  const host = filtering ? normalizeHost(q.host ?? '') : ''
+  const pool = filtering ? items.filter((i) => i.host === host) : items
+  const open = pool.filter((i) => i.status === 'open' && (q.scope === 'all' || i.path === path))
   open.sort((a, b) => {
     if (q.scope === 'all') {
       const d = Number(a.path !== path) - Number(b.path !== path)

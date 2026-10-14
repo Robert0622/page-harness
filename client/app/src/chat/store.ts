@@ -249,10 +249,10 @@ export function createChatStore() {
         sock.send({ type: 'review_status', id: m.id, status: m.status })
         break
       case 'ph:review-approve':
-        sock.send({ type: 'review_approve', url: m.url, status: m.status })
+        sock.send({ type: 'review_approve', url: m.url, status: m.status, host: m.host })
         break
       case 'ph:review-clear':
-        sock.send({ type: 'review_clear' })
+        sock.send({ type: 'review_clear', host: m.host })
         break
       case 'ph:review-export':
         sock.send({ type: 'review_export' })

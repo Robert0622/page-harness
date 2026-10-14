@@ -3,6 +3,7 @@
 // spacing-only ancestor selectors fold into technical details, and a text change stays separate
 // from a frame change even when they share a Live name. Sentences are plain language, not selectors or raw CSS.
 import type { ReviewApproval, ReviewItem, ReviewPatch } from './protocol'
+import { normalizeHost } from './paths'
 
 export interface TechLine {
   selector: string
@@ -91,7 +92,107 @@ function style(item: ReviewItem): Record<string, string> {
   return item.patch?.style ?? {}
 }
 
-function targetWords(item: ReviewItem): string {
+type CopyLang = 'zh-CN' | 'en'
+
+function imageCopyEn(item: ReviewItem): { title: string; say: string } {
+  const s = style(item)
+  const blob = Object.values(s).join(' ')
+  const white = /#fff\b|#ffffff|white|rgb\(\s*255\s*,\s*255\s*,\s*255/i.test(blob)
+  const border = !!(s.border || s['border-width'] || s['border-style'] || s['border-color'])
+  const rot = /rotate\(\s*(-?[\d.]+)\s*deg/i.exec(s.transform || blob)
+  const deg = rot ? Number(rot[1]) : 0
+  const shadow = !!s['box-shadow']
+  const bits: string[] = []
+  if (border) bits.push(white ? 'a white border' : 'a border')
+  if (rot && deg < -0.2) bits.push('a slight tilt left')
+  else if (rot && deg > 0.2) bits.push('a slight tilt right')
+  if (shadow) bits.push('a shadow')
+  const polaroid = white && border && !!rot && shadow
+  const say = bits.length ? `This photo now has ${bits.join(', ')}${polaroid ? ', like a polaroid on a desk' : ''}.` : 'This photo looks different. Before and after are below.'
+  let title = 'Photo appearance changed'
+  if (polaroid) title = 'Photo tilted like a polaroid'
+  else if (white && border && rot) title = 'Photo has a white border and a tilt'
+  else if (bits[0]) title = `Photo has ${bits[0]}`
+  return { title, say }
+}
+
+function textCopyEn(item: ReviewItem): { title: string; say: string } {
+  const before = item.anchor?.text?.trim()
+  const after = item.patch?.text?.trim()
+  const s = style(item)
+  const italic = s['font-style'] === 'italic'
+  const bangGone = !!before?.endsWith('!') && !!after && !after.endsWith('!')
+  const what = isHeading(item) ? 'The heading' : 'This text'
+  const parts: string[] = []
+  if (before && after && before !== after) parts.push(`changed from “${clip(before, 80)}” to “${clip(after, 80)}”`)
+  else if (after) parts.push(`changed to “${clip(after, 80)}”`)
+  if (italic) parts.push(parts.length ? 'and is now italic' : 'is now italic')
+  if (bangGone) parts.push('and the exclamation mark is gone')
+  if (!parts.length) return genericCopyEn(item)
+  const title = italic && bangGone ? `${what} is italic, without the exclamation mark` : italic ? `${what} is italic` : bangGone ? `${what} lost its exclamation mark` : what === 'The heading' ? 'Heading text changed' : 'Text changed'
+  return { title, say: `${what} ${parts.join(', ')}.` }
+}
+
+function rampCopyEn(members: ReviewItem[]): { title: string; say: string } {
+  const books = bookish(members)
+  const noun = books ? 'bibliography' : 'list'
+  const rows = members
+    .map((i) => {
+      const n = Number(/nth-(?:child|of-type)\((\d+)\)/i.exec(i.selector)?.[1] ?? NaN)
+      const s = style(i)
+      return { n, px: px(s['font-size']), border: !!(s['border-bottom'] || s['border-bottom-width']), bold: Number(s['font-weight']) >= 600 || /bold/i.test(s['font-weight'] || '') }
+    })
+    .filter((r) => !Number.isNaN(r.n) && !Number.isNaN(r.px))
+    .sort((a, b) => a.n - b.n)
+  let decreasing = rows.length ? 1 : 0
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].px < rows[i - 1].px - 0.5) decreasing = i + 1
+    else break
+  }
+  const lined = rows.find((r) => r.border)
+  const cut = lined ? rows.indexOf(lined) + 1 : decreasing
+  const restBold = rows.slice(cut).some((r) => r.bold)
+  const ul = members.find((m) => listRootSelector(m.selector) === norm(m.selector))
+  const bullets = /none/i.test(style(ul ?? members[0])['list-style'] || style(ul ?? members[0])['list-style-type'] || '')
+  const bits = [`The ${noun} ${bullets ? 'is no longer a same-size bulleted list' : 'uses a new type scale'}`]
+  if (cut >= 2) bits.push(`the first ${cut} items step down in size`)
+  if (lined) bits.push(`item ${lined.n} has a line under it`)
+  if (restBold) bits.push('the later items are the same bold size')
+  const title = cut >= 2 ? `${noun[0].toUpperCase()}${noun.slice(1)} steps down in size` : `${noun[0].toUpperCase()}${noun.slice(1)} appearance changed`
+  return { title, say: `${bits.join(', ')}.` }
+}
+
+function genericCopyEn(item: ReviewItem): { title: string; say: string } {
+  const s = style(item)
+  const bits: string[] = []
+  if (s['font-style'] === 'italic') bits.push('is italic')
+  if (Number(s['font-weight']) >= 600 || /bold/i.test(s['font-weight'] || '')) bits.push('is bold')
+  if (s['font-size']) bits.push(`size is ${s['font-size']}`)
+  if (s['font-family']) bits.push('uses a different font')
+  if (s.color) bits.push('text color changed')
+  if (s['background-color'] || s.background) bits.push('background changed')
+  if (s['border-radius']) bits.push('corners changed')
+  if (s.border || s['border-color']) bits.push('border changed')
+  if (s['text-decoration'] || s['text-decoration-line']) bits.push('text decoration changed')
+  if (s.opacity) bits.push('opacity changed')
+  const where = targetWordsEn(item)
+  if (!bits.length) return { title: 'Appearance changed', say: `${where} looks different. Before and after are below.` }
+  return { title: 'Appearance changed', say: `${where} ${bits.join(', ')}.` }
+}
+
+function targetWordsEn(item: ReviewItem): string {
+  const text = item.anchor?.text?.trim()
+  if (text) return `“${clip(text, 42)}”`
+  const tag = (item.anchor?.tag || '').toLowerCase()
+  if (tag === 'img' || /(?:^|[\s>+~])img(?![a-z-])/i.test(item.selector)) return 'this photo'
+  if (/^h[1-6]$/.test(tag) || /(?:^|[\s>+~])h[1-6](?![a-z-])/i.test(item.selector)) return 'this heading'
+  const label = item.label?.replace(/^[a-z0-9-]+\s*/i, '').replace(/^"|"$/g, '').trim()
+  if (label) return `“${clip(label, 42)}”`
+  return 'this part of the page'
+}
+
+function targetWords(item: ReviewItem, lang: CopyLang = 'zh-CN'): string {
+  if (lang === 'en') return targetWordsEn(item)
   const text = item.anchor?.text?.trim()
   if (text) return `「${clip(text, 42)}」这一块`
   const tag = (item.anchor?.tag || '').toLowerCase()
@@ -120,7 +221,8 @@ function liveLabel(item: ReviewItem): string | undefined {
   return n && LIVE_NOTE.test(n) ? n : undefined
 }
 
-function imageCopy(item: ReviewItem): { title: string; say: string } {
+function imageCopy(item: ReviewItem, lang: CopyLang = 'zh-CN'): { title: string; say: string } {
+  if (lang === 'en') return imageCopyEn(item)
   const s = style(item)
   const blob = Object.values(s).join(' ')
   const white = /#fff\b|#ffffff|white|rgb\(\s*255\s*,\s*255\s*,\s*255/i.test(blob)
@@ -144,7 +246,8 @@ function imageCopy(item: ReviewItem): { title: string; say: string } {
   return { title, say }
 }
 
-function textCopy(item: ReviewItem): { title: string; say: string } {
+function textCopy(item: ReviewItem, lang: CopyLang = 'zh-CN'): { title: string; say: string } {
+  if (lang === 'en') return textCopyEn(item)
   const before = item.anchor?.text?.trim()
   const after = item.patch?.text?.trim()
   const s = style(item)
@@ -170,7 +273,8 @@ function px(value: string | undefined): number {
   return Number.isFinite(n) ? n : NaN
 }
 
-function rampCopy(members: ReviewItem[]): { title: string; say: string } {
+function rampCopy(members: ReviewItem[], lang: CopyLang = 'zh-CN'): { title: string; say: string } {
+  if (lang === 'en') return rampCopyEn(members)
   const books = bookish(members)
   const noun = books ? '书目' : '列表'
   const rows = members
@@ -199,7 +303,8 @@ function rampCopy(members: ReviewItem[]): { title: string; say: string } {
   return { title, say: `${bits.join('，')}。` }
 }
 
-function genericCopy(item: ReviewItem): { title: string; say: string } {
+function genericCopy(item: ReviewItem, lang: CopyLang = 'zh-CN'): { title: string; say: string } {
+  if (lang === 'en') return genericCopyEn(item)
   const s = style(item)
   const bits: string[] = []
   if (s['font-style'] === 'italic') bits.push('改成了斜体')
@@ -212,36 +317,36 @@ function genericCopy(item: ReviewItem): { title: string; say: string } {
   if (s.border || s['border-color']) bits.push('边框改了')
   if (s['text-decoration'] || s['text-decoration-line']) bits.push('文字装饰改了')
   if (s.opacity) bits.push('透明度改了')
-  const where = targetWords(item)
+  const where = targetWords(item, 'zh-CN')
   if (!bits.length) return { title: '这一块的外观改了', say: `${where}的外观改了，差别看下面的改前和改后。` }
   return { title: '这一块的外观改了', say: `${where}${bits.join('，')}。` }
 }
 
-function noteCopy(item: ReviewItem): { title: string; say: string; where: string } {
+function noteCopy(item: ReviewItem, lang: CopyLang = 'zh-CN'): { title: string; say: string; where: string } {
   const note = item.note.trim()
-  const line = note.split(/[。.!！?\n]/)[0]?.trim() || '文字意见'
+  const line = note.split(/[。.!！?\n]/)[0]?.trim() || (lang === 'en' ? 'Note' : '文字意见')
   return {
     title: clip(line, 36),
     say: note,
-    where: `关于${targetWords(item)}`,
+    where: lang === 'en' ? `About ${targetWords(item, 'en')}` : `关于${targetWords(item, 'zh-CN')}`,
   }
 }
 
-function copyFor(members: ReviewItem[], ramp: boolean): { title: string; say: string; where?: string } {
-  if (ramp) return rampCopy(members)
+function copyFor(members: ReviewItem[], ramp: boolean, lang: CopyLang = 'zh-CN'): { title: string; say: string; where?: string } {
+  if (ramp) return rampCopy(members, lang)
   const item = members[0]
-  if (!item || item.kind === 'note') return noteCopy(item)
-  if (item.patch?.text !== undefined) return textCopy(item)
-  if (isImage(item)) return imageCopy(item)
-  return genericCopy(item)
+  if (!item || item.kind === 'note') return noteCopy(item, lang)
+  if (item.patch?.text !== undefined) return textCopy(item, lang)
+  if (isImage(item)) return imageCopy(item, lang)
+  return genericCopy(item, lang)
 }
 
-function entryFrom(members: ReviewItem[], extras: ReviewItem[], ramp: boolean): ReaderEntry {
+function entryFrom(members: ReviewItem[], extras: ReviewItem[], ramp: boolean, lang: CopyLang = 'zh-CN'): ReaderEntry {
   const root = ramp ? listRootSelector(members[0].selector) : null
   const primary = ramp
     ? (members.find((m) => norm(m.selector) === root) ?? [...members].sort((a, b) => a.selector.length - b.selector.length || a.n - b.n)[0])
     : members[0]
-  const copy = copyFor(members, ramp)
+  const copy = copyFor(members, ramp, lang)
   const ordered = [...members].sort((a, b) => a.n - b.n)
   const lines = [...ordered, ...extras].map(techOf)
   return {
@@ -273,7 +378,7 @@ function rampGroups(patches: ReviewItem[]): ReviewItem[][] {
 }
 
 /** Collapse stored items into what a reader should see. Items themselves are not deleted. */
-export function readerEntries(items: ReviewItem[]): ReaderEntry[] {
+export function readerEntries(items: ReviewItem[], lang: CopyLang = 'zh-CN'): ReaderEntry[] {
   const paths = [...new Set(items.map((i) => i.path))]
   const out: ReaderEntry[] = []
   for (const path of paths) {
@@ -288,9 +393,9 @@ export function readerEntries(items: ReviewItem[]): ReaderEntry[] {
     const extras = rest.filter((i) => folded.has(i.id))
     const singles = rest.filter((i) => !folded.has(i.id))
     const built: ReaderEntry[] = [
-      ...notes.map((i) => entryFrom([i], [], false)),
-      ...ramps.map((g) => entryFrom(g, extras.filter((e) => g.some((m) => isAncestorSelector(e.selector, m.selector))), true)),
-      ...singles.map((i) => entryFrom([i], extras.filter((e) => isAncestorSelector(e.selector, i.selector)), false)),
+      ...notes.map((i) => entryFrom([i], [], false, lang)),
+      ...ramps.map((g) => entryFrom(g, extras.filter((e) => g.some((m) => isAncestorSelector(e.selector, m.selector))), true, lang)),
+      ...singles.map((i) => entryFrom([i], extras.filter((e) => isAncestorSelector(e.selector, i.selector)), false, lang)),
     ]
     out.push(...built)
   }
@@ -311,6 +416,7 @@ export function appearanceSelectors(changes: { selector: string; patch: ReviewPa
     status: 'open',
     replies: [],
     createdAt: 0,
+    host: '',
   }))
   return readerEntries(items).map((e) => e.primary.selector)
 }
@@ -338,9 +444,13 @@ function mdImage(label: string, src: string | undefined): string[] {
 }
 
 /** page-review.md: the same sentences, grouping and looks as the bubbles. */
-export function reviewMarkdown(target: string, items: ReviewItem[], approvals: ReviewApproval[]): string {
-  const entries = readerEntries(items)
+export function reviewMarkdown(target: string, items: ReviewItem[], approvals: ReviewApproval[], lang: CopyLang = 'zh-CN'): string {
+  const entries = readerEntries(items, lang)
+  const before = lang === 'en' ? 'Before' : '改前'
+  const after = lang === 'en' ? 'After' : '改后'
+  const details = lang === 'en' ? 'Selector and style' : '选择器和样式'
   const open = entries.filter((e) => e.status === 'open').length
+  const who = (name: string) => (name === '匿名' || name === 'Anonymous' ? (lang === 'en' ? 'Anonymous' : '匿名') : name)
   const lines = [`# Page review`, '', `Site: ${target}`, `Items: ${entries.length} (${open} open)`, '']
   const paths = [...new Set([...entries.map((e) => e.path), ...approvals.map((a) => a.path)])]
   for (const p of paths) {
@@ -354,15 +464,15 @@ export function reviewMarkdown(target: string, items: ReviewItem[], approvals: R
       for (const note of authorNotes(e)) lines.push(note, '')
       const look = e.primary.look
       if (e.kind === 'patch') {
-        lines.push(...mdImage('改前', look?.beforeImage), ...mdImage('改后', look?.afterImage))
-        if (!look?.beforeImage && !look?.afterImage) {
+        lines.push(...mdImage(before, look?.beforePage ?? look?.beforeImage), ...mdImage(after, look?.afterPage ?? look?.afterImage))
+        if (!look?.beforeImage && !look?.afterImage && !look?.beforePage && !look?.afterPage) {
           const text = e.lines.find((l) => l.text)
-          if (text?.text) lines.push(`改前 → 改后：${text.text}`, '')
+          if (text?.text) lines.push(lang === 'en' ? `${before} → ${after}: ${text.text}` : `${before} → ${after}：${text.text}`, '')
         }
       }
-      lines.push(`By ${e.authorName}`, '')
+      lines.push(`By ${who(e.authorName)}`, '')
       if (e.lines.length) {
-        lines.push('<details>', '<summary>选择器和样式</summary>', '')
+        lines.push('<details>', `<summary>${details}</summary>`, '')
         for (const line of e.lines) {
           lines.push(`- \`${line.selector}\``)
           if (line.css) lines.push(`  - CSS: \`${line.css}\``)
@@ -372,7 +482,7 @@ export function reviewMarkdown(target: string, items: ReviewItem[], approvals: R
         lines.push('', '</details>', '')
       }
       const replies = e.members.flatMap((m) => m.replies)
-      for (const r of replies) lines.push(`- ${r.author.name}: ${r.text.replace(/\n/g, ' ')}`)
+      for (const r of replies) lines.push(`- ${who(r.author.name)}: ${r.text.replace(/\n/g, ' ')}`)
       if (replies.length) lines.push('')
     }
   }
@@ -397,6 +507,13 @@ export interface PromptOptions {
   includeResolved?: boolean
   /** Control port for this run. Defaults to the page URL's port + 1. */
   controlPort?: number
+  /** Site whose notes this prompt asks for. Written into the review URL as `host`. */
+  host?: string
+  /**
+   * API origin to call, when it is not the page host on the control port.
+   * Bookmarklet mode uses the local control server (`http://127.0.0.1:17991`).
+   */
+  apiBase?: string
 }
 
 /** Page size written into the copied prompt. The review API uses the same default. */
@@ -484,23 +601,39 @@ interface SkillParts {
   base: string
   listUrl: string
   markUrl: string
+  host: string
+}
+
+function safeApiBase(raw: string | undefined, pageUrl: string, controlPort?: number): string {
+  if (!raw) return reviewApiBase(pageUrl, controlPort)
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return reviewApiBase(pageUrl, controlPort)
+    return u.origin
+  } catch {
+    return reviewApiBase(pageUrl, controlPort)
+  }
 }
 
 function skillParts(items: ReviewItem[], o: PromptOptions): SkillParts {
   const pageUrl = pageAddress(o)
-  const base = reviewApiBase(pageUrl, o.controlPort)
+  const base = safeApiBase(o.apiBase, pageUrl, o.controlPort)
   const scope = o.scope === 'all' ? 'all' : 'here'
   const path = o.path || '/'
+  const host = o.host ? normalizeHost(o.host) : ''
+  const pool = host ? items.filter((i) => i.host === host) : items
   const params = new URLSearchParams({ scope, path, page: '1', pageSize: String(REVIEW_PAGE_SIZE) })
+  if (host) params.set('host', host)
   return {
     range: scope === 'here' ? (o.lang === 'en' ? 'this page' : '本页') : o.lang === 'en' ? 'all pages (current page first)' : '全部页面（当前页优先）',
-    open: promptEntries(items, { path: o.path, scope: o.scope }).length,
+    open: promptEntries(pool, { path: o.path, scope: o.scope }).length,
     scope,
     path,
     pageUrl,
     base,
     listUrl: `${base}/__ph/api/review?${params.toString()}`,
     markUrl: `${base}/__ph/api/review/resolve`,
+    host,
   }
 }
 
@@ -534,6 +667,7 @@ function skillPromptZh(s: SkillParts): string {
     '把这段说明交给本机编码 Agent。意见正文不在这里。',
     '',
     `- 范围：${s.range}`,
+    ...(s.host ? [`- 网站：${s.host}（只处理这个域名，接口已带 host=${s.host}）`] : []),
     `- 页面路径：${s.path}`,
     `- 待处理：${s.open} 条（已解决的不要拉取）`,
     '',
@@ -554,6 +688,7 @@ function skillPromptZh(s: SkillParts): string {
     '- 头：Accept: application/json；有正文时 Content-Type: application/json',
     '- 不带 Cookie，不带令牌',
     `- 本次范围已写入 scope=${s.scope}`,
+    ...(s.host ? [`- 本次域名已写入 host=${s.host}`] : []),
     `- 分页：page 从 1 开始，pageSize 默认 ${REVIEW_PAGE_SIZE}`,
     '- 页面路径写在 path 里，复制之后不再跟着地址栏变化',
     '',
@@ -609,6 +744,7 @@ function skillPromptEn(s: SkillParts): string {
     'Give this to a coding agent on this machine. The note text is not in this message.',
     '',
     `- Scope: ${s.range}`,
+    ...(s.host ? [`- Site: ${s.host} (only this domain; the API URL includes host=${s.host})`] : []),
     `- Page path: ${s.path}`,
     `- Open items: ${s.open} (do not fetch resolved ones)`,
     '',
@@ -629,6 +765,7 @@ function skillPromptEn(s: SkillParts): string {
     '- Headers: Accept: application/json; Content-Type: application/json when there is a body',
     '- No Cookie, no token',
     `- This copy fixed scope=${s.scope}`,
+    ...(s.host ? [`- This copy fixed host=${s.host}`] : []),
     `- Paging: page starts at 1, pageSize defaults to ${REVIEW_PAGE_SIZE}`,
     '- The page path is the path query. It stays as it was at copy time.',
     '',

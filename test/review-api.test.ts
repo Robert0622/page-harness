@@ -11,6 +11,7 @@ const human = { id: 'u', name: 'Ada', kind: 'human' as const }
 
 function note(p: Partial<ReviewItem> & Pick<ReviewItem, 'id' | 'n'>): ReviewItem {
   return {
+    host: '',
     kind: 'note',
     path: '/',
     selector: 'h1',

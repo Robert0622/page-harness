@@ -200,6 +200,23 @@ describe('review mode gateway with a shared team', () => {
     ws.close()
   })
 
+  it('turns a chat follow-up on waiting candidates into a new set, not review items', async () => {
+    const ws = await open(ownerCookie)
+    ws.onMessage = (m) => {
+      if (m.type === 'page_probe') ws.send({ type: 'probe_result', id: m.id, result: { count: 1, url: target.url, label: m.selector, anchor: { tag: 'h1' } } })
+    }
+    const tgt = { selector: 'h1.title', tagName: 'H1', classes: ['title'], text: 'Hello fixture', outerHTML: '<h1 class="title">Hello fixture</h1>', styles: {}, url: target.url }
+    ws.send({ type: 'live_op', request: { op: 'generate', action: 'bolder', count: 2, target: tgt, url: target.url } })
+    const live = (pred: (s: LiveSession) => boolean) => ws.wait<Extract<ServerMsg, { type: 'live' }>>((m) => m.type === 'live' && m.sessions.some(pred), 10000)
+    const s = (await live((x) => x.status === 'ready' && !x.accepted)).sessions.find((x) => x.status === 'ready')!
+    ws.send({ type: 'prompt', message: { text: '再改改', attachments: [], picks: [] } })
+    const revised = (await live((x) => x.sid === s.sid && x.status === 'ready' && x.variants[0]?.label === 'Airy')).sessions.find((x) => x.sid === s.sid)!
+    expect(revised.variants.map((v) => v.label)).toEqual(['Airy', 'Roomy'])
+    ws.send({ type: 'live_op', request: { op: 'discard', sid: s.sid } })
+    await live((x) => x.sid === s.sid && x.status === 'discarded')
+    ws.close()
+  })
+
   it('refuses refining a missing candidate', async () => {
     const ws = await open(ownerCookie)
     ws.onMessage = (m) => {

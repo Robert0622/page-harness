@@ -1,72 +1,110 @@
-# page-harness
+<!-- TODO(Tencent OSS): swap in the Tencent open-source hero banner (en / zh) once brand guidelines are confirmed. No marketing copy in the image. -->
+<p align="center">
+  <img src="./docs/logo.svg" width="72" alt="page-harness logo">
+</p>
 
-[中文](./README.zh-CN.md)
+<h1 align="center">page-harness</h1>
 
-Point it at any running frontend and the page gets a **Pick / Artifacts / Chat** dock, driven by the coding agent CLI already on your machine (Claude Code, Codex, Cursor Agent, CodeBuddy Code or OpenCode). No sandbox, no accounts, no changes to your app.
+<p align="center">
+  <a href="https://www.npmjs.com/package/page-harness"><img alt="npm page-harness" src="https://img.shields.io/npm/v/page-harness?label=npm&labelColor=16161A&color=7C5CFF&style=flat-square"></a>
+  <a href="./LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-7C5CFF?labelColor=16161A&color=7C5CFF&style=flat-square"></a>
+  <img alt="Node" src="https://img.shields.io/badge/node-%E2%89%A520.11-7C5CFF?labelColor=16161A&color=7C5CFF&style=flat-square">
+  <!-- TODO(Tencent OSS): enable the line below (Release / Stars / CI) once the repo URL is final; replace TODO/page-harness. -->
+  <!-- <a href="https://github.com/TODO/page-harness/releases"><img alt="Release" src="https://img.shields.io/github/v/release/TODO/page-harness?labelColor=16161A&color=7C5CFF&style=flat-square"></a>
+  <a href="https://github.com/TODO/page-harness/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/TODO/page-harness?labelColor=16161A&color=7C5CFF&style=flat-square"></a>
+  <br/>
+  <a href="https://github.com/TODO/page-harness/actions/workflows/ci.yml"><img alt="ci" src="https://img.shields.io/github/actions/workflow/status/TODO/page-harness/ci.yml?branch=main&label=ci&labelColor=16161A&style=flat-square"></a> -->
+</p>
+
+<p align="center">
+  <b>English</b> · <a href="./README.zh-CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <a href="#overview">Overview</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#product-tour">Product tour</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#documentation">Docs</a> ·
+  <a href="#development">Development</a>
+</p>
+
+<p align="center">
+  <a href="docs/hero.mp4?raw=true">
+    <img src="./docs/hero.webp" width="720" alt="page-harness promo video (0:30)">
+  </a>
+</p>
+
+<p align="center"><sub>0:30 · 1080p · click to open the mp4 (with sound)</sub></p>
+
+## Overview
+
+> **TODO (Tencent OSS):** Tencent logo, attribution line and compliance notes are pending confirmation. Repo URL is a placeholder: `https://github.com/TODO/page-harness`.
+
+**Turn any running web page into a workspace for your coding agent.**
+
+Click the thing you want changed and tell your agent what to do, right on the page: Pick, Chat and Artifacts, driven by the agent CLI already on your machine (Claude Code, Codex, Cursor Agent, CodeBuddy Code, OpenCode). For feedback only, `--no-agent` keeps just Pick and Notes; run it with no URL and you get a home page with a **✦ Page-Harness** bookmarklet that works on any site.
+
+Describing UI in a terminal is painful: "the second button in the card on the left, make it a bit softer". With page-harness you just click the thing on the page and talk to your agent right there. It writes the code, your dev server reloads, you see the result on the same page.
+
+## Quick start
+
+One line. Point it at your dev server:
 
 ```bash
-npx page-harness http://localhost:5173 --project ./my-app --agent claude
-# open http://127.0.0.1:17990 — it is your app, plus the dock in the bottom-right corner
+npx page-harness http://localhost:5173 --project ./my-app
+npx page-harness --no-agent http://localhost:5173   # review only: Pick and Notes, no agent CLI
+npx page-harness                                    # no URL: home page with a bookmarklet
 ```
 
-## What you get
+Open **http://127.0.0.1:17990**. That is your app as usual, plus a dock in the bottom-right corner.
 
-- **Pick** — click an element on the page and choose what to do with it: **Quote in chat** (selector, text and outer HTML go with your next message; Shift+click quotes directly), **Comment**, **Edit** (no-source sites) or **Live candidates**. Live: choose an element, describe the change and the agent writes 2–4 candidates straight into your source; you flip between them on the page, compare side by side, tune parameters, refine one, then accept or discard.
-- **Chat** — a draggable, resizable chat window. Streaming replies with Markdown and syntax highlighting, collapsible thinking, tool cards, changed-file lists, image/file attachments (paste, drop or pick), a per-chat queue you can reorder, edit or withdraw, Stop / Retry, multiple chats, per-chat agent and model.
-- **Page control** (off by default) — let the agent read the page and click, type, select and scroll on it. A banner shows when it is on; Stop takes it back at any time.
-- **Artifacts** — the agent writes reports, mockups, JSON, images and other files through MCP. Preview them in tabs with version history: Markdown, sandboxed HTML (desktop / mobile widths), structured JSON, code, images; copy, download, export to PNG or PDF.
-- **Notes** — comment on or edit elements in place, threaded replies, resolve and per-page approval; teammates on your network can join as reviewers with `--share`. Works on sites you have no source for.
-- **Questions** — the agent can ask you multiple-choice questions or a short form and wait for the answer.
-- **History** — every chat is an append-only event log on disk. Browse, search and export it at `http://127.0.0.1:17991/__ph/history`, or from the chat switcher.
+- Needs **Node.js 20.11+** and at least one signed-in agent CLI on `PATH` (see below).
+- The target can be a bare port (`3000`), `host:port` or a full URL. HMR (Vite, webpack, Next.js…) keeps working through the proxy.
+- No sandbox, no accounts, no changes to your app. Everything stays in `<project>/.page-harness/`.
 
-## Requirements
+| Service | URL |
+|---|---|
+| Your app + dock | `http://127.0.0.1:17990` |
+| Panel / API (control port) | `http://127.0.0.1:17991` |
+| Chat history | `http://127.0.0.1:17991/__ph/history` |
+| Bookmarklet home (no URL) | `http://127.0.0.1:17991` |
 
-- Node.js 20.11 or newer.
-- At least one agent CLI on `PATH`, signed in:
-  - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
-  - [Codex](https://github.com/openai/codex) (`codex`)
-  - [Cursor Agent](https://docs.cursor.com/en/cli/overview) (`cursor-agent`)
-  - [CodeBuddy Code](https://www.codebuddy.ai/cli) (`codebuddy`, `npm i -g @tencent-ai/codebuddy-code`)
-  - [OpenCode](https://opencode.ai) (`opencode`, `npm i -g opencode-ai`)
+### Other ways to run
 
-page-harness detects which ones are installed and shows them in the banner. Use `--claude-path`, `--codex-path`, `--cursor-path`, `--codebuddy-path` or `--opencode-path` for non-standard locations. Agents that are not installed stay in the chat's agent picker, greyed out, with the install command.
+| Option | When to use it |
+|---|---|
+| `npx page-harness <url>` | The standard setup above: your app behind the proxy, with Pick, Chat and Artifacts driven by an agent CLI |
+| `--no-agent <url>` | Feedback only: Pick and Notes, no agent CLI needed ([details](#review-only---no-agent)) |
+| no URL | A home page with the **✦ Page-Harness** bookmarklet, to leave notes on any site without a proxy ([details](#bookmarklet-no-url)) |
+| `--share` | Teammates on your network join as reviewers with a link ([details](#team-review---share)) |
 
-What each agent supports:
+## Product tour
 
-| | Claude Code | Codex | Cursor Agent | CodeBuddy Code | OpenCode |
-|---|---|---|---|---|---|
-| Streaming text / thinking | ✓ | ✓ | ✓ | ✓ | per block¹ |
-| Tool cards, changed files | ✓ | ✓ | ✓ | ✓ | ✓¹ |
-| Resume a chat | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Model list | ✓ | ✓ | ✓ | ✓ (from `--help`) | ✓ (`opencode models`) |
-| Reasoning effort | – | ✓ | – | ✓ (`--effort`) | ✓ (`--variant`) |
-| Image attachments | ✓ | ✓ | file path in prompt | ✓ | ✓ (`--file`) |
+### Review only
 
-¹ `opencode run --format json` reports text, reasoning and tool calls once each part has finished, so replies arrive a block at a time and a tool card opens and closes together.
+**Pick and Notes, nothing else.** With `--no-agent` no agent CLI is started. Pick an element, leave a comment or an edit, reply, resolve and approve per page. [Details →](#review-only---no-agent)
 
-## Usage
+<p align="center"><img src="./docs/review-only.png" width="720" alt="Page notes panel in review-only mode"></p>
 
-```text
-page-harness <frontend-url> [options]
+### Bookmarklet home
 
-  --project <dir>        Project the agent works in (default: current directory)
-  --agent <id>           claude | codex | cursor | codebuddy | opencode (default: first one installed)
-  --model <name>         Default model for new chats
-  --port <n>             App port: the proxied frontend (default 17990)
-  --control-port <n>     Panel / API port (default: app port + 1)
-  --host <addr>          Listen address (default 127.0.0.1)
-  --allow-host <name>    Extra Host header to accept (repeatable), e.g. a LAN name
-  --keep-host            Forward the browser's Host header to the target
-  --public-scheme <s>    http | https: scheme browsers use to reach both ports (default http);
-                         https behind a load balancer that terminates TLS on the same ports
-  --open                 Open the browser
-  --live-guard-hook      Install a git pre-commit hook that rejects Live candidate markers
-  --review / --source    Force review mode (no source) or source mode; default is by host
-  --share                Let teammates on your network join as reviewers (listens on 0.0.0.0)
-  --verbose / --quiet
-```
+**One button to drag.** Run `npx page-harness` with no URL and the home page has a single **✦ Page-Harness** button. Drag it to the bookmarks bar. [Details →](#bookmarklet-no-url)
 
-`<frontend-url>` can be a bare port (`3000`), `host:port` or a full URL. Dev-server HMR (Vite, webpack, Next.js…) keeps working through the proxy, including WebSockets.
+<p align="center"><img src="./docs/home.png" width="520" alt="Home page with the ✦ Page-Harness button"></p>
+
+### Notes on any site
+
+**Click the bookmark on any page.** The dock is injected into that page in a Shadow DOM, with no proxy, and notes are saved to your local server, grouped by site.
+
+<p align="center"><img src="./docs/bookmarklet.png" width="720" alt="Bookmarklet dock on a plain page"></p>
+
+### My notes
+
+**Every site's notes in one place.** Sites on the left, that site's notes on the right, with Export Markdown, Export JSON and Copy prompt for your agent.
+
+<p align="center"><img src="./docs/home-notes.png" width="720" alt="My notes view"></p>
 
 ## How it works
 
@@ -124,7 +162,7 @@ When the target is a public site (anything that is not localhost, a private IP o
 
 Notes work in both modes; hand edits and `page_patch` only without source.
 
-- Notes belong to the page they were made on (path without hash, trailing slash or tracking parameters). **This page** shows the current page; **All** groups every page, and clicking a note on another page goes there and opens it. The dock badge counts open notes on the current page and shows a dot when other pages have some.
+- Notes belong to the page they were made on (path without hash, trailing slash or tracking parameters) and to the **site** (`host`, hostname plus a non-default port). Proxy mode stores the target host; the bookmarklet stores `location.host`. The overlay only pins notes for the site you are on. **This page** shows the current page; **All** groups every page of that site, and clicking a note on another page goes there and opens it. The dock badge counts open notes on the current page and shows a dot when other pages have some.
 - Each pin opens a thread: author, replies, Resolve / Reopen, compare a change with the original, quote the element into the chat (owner) and delete (author or owner).
 - **Approve** / **Request changes** records a verdict per page and person.
 - Pins are re-attached with a fingerprint (tag, id, stable classes, key attributes, text and its context) when the selector breaks after a re-render or a redesign. If nothing fits well enough the note is shown as *not found on the page* instead of being pinned to the wrong element. Changes are re-applied after reloads and re-renders; nothing is sent to the site.
@@ -140,6 +178,101 @@ npx page-harness https://example.com --share
 
 Send the Share link (also in Settings → Team) to teammates on the same network. Opening it gives them a reviewer session for that browser; they enter a display name once and then see the page with everyone's notes and changes in real time. Reviewers can comment, edit (review mode), reply, resolve and approve. They cannot run or see the agent, chats, history, uploads or page control. Other machines without the link get `403`.
 
+## Features
+
+| Area | Highlights |
+|---|---|
+| **Pick** | Click any element and **Quote in chat** (selector, text and HTML go along; Shift+click quotes directly), **Comment**, **Edit** (sites without source) or start **Live candidates**. |
+| **Live candidates** | Describe a change and the agent writes 2–4 variants straight into your source. Flip between them on the page, compare side by side, tune parameters, refine one, then accept or discard. |
+| **Chat** | Draggable, resizable window with streaming Markdown, collapsible thinking, tool cards, changed-file lists, image/file attachments, a reorderable per-chat queue, Stop / Retry, multiple chats with per-chat agent and model. |
+| **Artifacts** | The agent writes reports, mockups, JSON and images through MCP. Preview them in tabs with version history; export to PNG or PDF. |
+| **Page control (off by default)** | Let the agent read, click, type, select and scroll on the page. A banner shows while it is on; Stop takes it back any time. |
+| **Notes & review** | Pin threaded comments to elements, resolve them and approve per page. Works on sites you have no source for (review mode). |
+| **Team review** | `--share` lets teammates on your network join as reviewers with a link. |
+| **Questions** | The agent can ask you multiple-choice questions or a short form and wait for the answer. |
+| **History** | Every chat is an append-only event log on disk; browse, search and export it. |
+
+### Supported agents
+
+page-harness drives the CLI you already use and detects which ones are installed:
+
+| Agent | Command | Install |
+|---|---|---|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `claude` | see docs |
+| [Codex](https://github.com/openai/codex) | `codex` | see docs |
+| [Cursor Agent](https://docs.cursor.com/en/cli/overview) | `cursor-agent` | see docs |
+| [CodeBuddy Code](https://www.codebuddy.ai/cli) | `codebuddy` | `npm i -g @tencent-ai/codebuddy-code` |
+| [OpenCode](https://opencode.ai) | `opencode` | `npm i -g opencode-ai` |
+
+Pick one with `--agent claude|codex|cursor|codebuddy|opencode` (default: the first one installed). Non-standard locations: `--claude-path`, `--codex-path`, `--cursor-path`, `--codebuddy-path`, `--opencode-path`.
+
+| | Claude Code | Codex | Cursor Agent | CodeBuddy Code | OpenCode |
+|---|---|---|---|---|---|
+| Streaming text / thinking | ✓ | ✓ | ✓ | ✓ | per block¹ |
+| Tool cards, changed files | ✓ | ✓ | ✓ | ✓ | ✓¹ |
+| Resume a chat | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Model list | ✓ | ✓ | ✓ | ✓ (from `--help`) | ✓ (`opencode models`) |
+| Reasoning effort | – | ✓ | – | ✓ (`--effort`) | ✓ (`--variant`) |
+| Image attachments | ✓ | ✓ | file path in prompt | ✓ | ✓ (`--file`) |
+
+¹ `opencode run --format json` reports text, reasoning and tool calls once each part has finished, so replies arrive a block at a time and a tool card opens and closes together.
+
+## Usage
+
+```text
+page-harness [frontend-url] [options]
+
+  --project <dir>        Project the agent works in (default: current directory)
+  --agent <id>           claude | codex | cursor | codebuddy | opencode (default: first one installed)
+  --model <name>         Default model for new chats
+  --port <n>             App port: the proxied frontend (default 17990)
+  --control-port <n>     Panel / API port (default: app port + 1, or 17991 with no URL)
+  --host <addr>          Listen address (default 127.0.0.1)
+  --allow-host <name>    Extra Host header to accept (repeatable), e.g. a LAN name
+  --keep-host            Forward the browser's Host header to the target
+  --public-scheme <s>    http | https: scheme browsers use to reach both ports (default http);
+                         https behind a load balancer that terminates TLS on the same ports
+  --open                 Open the browser
+  --live-guard-hook      Install a git pre-commit hook that rejects Live candidate markers
+  --review / --source    Force review mode (no source) or source mode; default is by host
+  --no-agent             Review only. Do not detect or start an agent CLI.
+                         The dock is Pick and Notes. Implied when no URL is given.
+  --lang <zh|en>         Home page and dock language. Omit it and each browser keeps its own.
+  --share                Let teammates on your network join as reviewers (listens on 0.0.0.0)
+  --verbose / --quiet
+```
+
+`<frontend-url>` can be a bare port (`3000`), `host:port` or a full URL. Omit it to start the bookmarklet home page. Dev-server HMR (Vite, webpack, Next.js…) keeps working through the proxy, including WebSockets.
+
+### Review only (`--no-agent`)
+
+```bash
+npx page-harness --no-agent http://localhost:5173
+```
+
+No agent CLI is detected or started, and MCP is refused. The dock is **Pick** and **Notes** only: comment, edit, reply, resolve and approve. Chat, Artifacts, Live, page control and questions are not shown. Notes are still saved in the project's `review.json`, under the **target** site's host (not the proxy's `127.0.0.1:17990`).
+
+### Bookmarklet (no URL)
+
+```bash
+npx page-harness
+# Home  http://127.0.0.1:17991
+```
+
+This starts only the control server, always in review-only mode. The home page is one button, **✦ Page-Harness**: drag it to the bookmarks bar, open any site and click it. **Having trouble?** on the home page lists the usual reasons it does nothing. The bookmark only works for this run; drag it again after a restart. The overlay is injected into that page (no reverse proxy) inside a Shadow DOM, so the host page's CSS does not restyle the dock. The script always loads from this server: `http://127.0.0.1:<control-port>/__ph/overlay.js`.
+
+`--lang zh` or `--lang en` sets the home page and the dock (including exported Markdown and the copied prompt). Omit it and each browser uses its saved choice, or the browser language.
+
+Notes are written to this local server and grouped by site (`location.host`, including a non-default port). **My notes (n)** at the top right opens the notes view: sites on the left, that site's notes on the right, with Export Markdown, Export JSON and Copy prompt. The copied prompt calls this control server and includes `host=` so an agent only pulls that site:
+
+```text
+GET http://127.0.0.1:17991/__ph/api/review?scope=all&path=%2F&page=1&pageSize=20&host=shop.example.com
+```
+
+The same `host` query works on the paging API when you want one site. Omit it and the API still returns every site, as before.
+
+**Limits.** An https page usually blocks a script loaded from `http://127.0.0.1` (mixed content), and saving a note still calls that http control port. Chrome generally allows `127.0.0.1` and may ask for local-network access; the server answers `Access-Control-Allow-Private-Network` on the bookmarklet routes. Firefox and Safari often block that request as mixed content. A host page CSP that forbids connections to `127.0.0.1` blocks saving too. When the bookmarklet cannot reach the control port, use `page-harness <url> --no-agent` and review through the proxy instead. The bookmarklet carries a per-run token (`X-PH-Token`). It is visible in the bookmark and on pages where you click it; other sites cannot read or write notes without it. The unauthenticated paging API (`GET /__ph/api/review`) does not send CORS headers, so a random page cannot read notes through it.
+
 ## Security model
 
 There is no login: it is a local developer tool and binds to `127.0.0.1` by default. Internally every surface is locked down:
@@ -147,7 +280,7 @@ There is no login: it is a local developer tool and binds to `127.0.0.1` by defa
 - **Two origins.** Your app (and any script on it) runs on the app port; the panel, API and agent endpoints are on the control port, so page scripts cannot read them.
 - **Owner and reviewers.** Without `--share` only this machine can connect and everything behaves as one user. With `--share`, the owner session is only issued to loopback requests; other machines need the invite link, which sets signed (HMAC) reviewer cookies for the panel and the app port; without them both ports answer `403`. Reviewers are limited to the review actions on the WebSocket and to reading artifacts; everything else returns `403`. Name the owner in Settings → Team.
 - **Session cookie.** The panel gets an `HttpOnly`, `SameSite=Strict` cookie scoped to `/__ph`; the cookie is stripped before requests are forwarded to your dev server.
-- **API.** Reads require a same-origin `Sec-Fetch-Site`; writes require a matching `Origin` plus a custom `X-PH` header. The WebSocket checks the cookie and `Origin`.
+- **API.** Reads require a same-origin `Sec-Fetch-Site`; writes require a matching `Origin` plus a custom `X-PH` header. The WebSocket checks the cookie and `Origin`. The bookmarklet is the exception: cross-origin review reads and writes need the per-run `X-PH-Token`, and the response reflects that page's `Origin` (never `*`). `GET /__ph/api/review` stays callable from curl without CORS headers.
 - **MCP.** Every agent turn gets its own bearer token (passed through an environment variable or a private temp file, never on the command line) that is revoked when the turn ends. Browser requests to the MCP endpoint are rejected.
 - **Host allow-list.** Requests with unexpected `Host` headers get `421` (DNS rebinding). Add names with `--allow-host` if you expose it on a LAN.
 - **Framing.** The panel may only be framed by the app origin; the history page cannot be framed at all.
@@ -172,6 +305,38 @@ team.json                   invite token, signing key and reviewer names (mode 6
 
 Delete the folder to start over.
 
+## FAQ
+
+**Do I need to change my app?**
+No. page-harness is a reverse proxy that injects one script into HTML responses. Your code is untouched unless the agent edits it.
+
+**Does it work on sites I don't have the source for?**
+Yes. Public URLs start in review mode: the agent leaves notes and temporary page changes instead of editing files. Force it with `--review` / `--source`.
+
+**Which model does it use? Do I need an API key?**
+Whatever your agent CLI is signed in with. page-harness has no accounts or keys of its own; pick the model per chat.
+
+**Is it safe to expose?**
+It binds to `127.0.0.1` with no login by default. `--share` opens it to your network with signed reviewer links. Agents run with non-interactive permissions inside `--project`, so only use it on projects you'd let the agent edit.
+
+**What if Live markers end up in my code?**
+page-harness scans the working tree after every Live or file-editing turn and warns you; `--live-guard-hook` installs a pre-commit hook that rejects them.
+
+**How do I reset?**
+Delete `<project>/.page-harness/`.
+
+## Documentation
+
+| Start here | |
+|---|---|
+| [Quick start](#quick-start) | Install and the first run |
+| [Usage](#usage) | All CLI options, review only and the bookmarklet |
+| [How it works](#how-it-works) | Proxy, overlay, MCP tools, Live candidates, review mode |
+| [Security model](#security-model) | What is locked down and how |
+| [Data](#data) | What is stored in `.page-harness/` |
+| [FAQ](#faq) | Common questions |
+| [npm package](https://www.npmjs.com/package/page-harness) | Released versions |
+
 ## Development
 
 ```bash
@@ -188,6 +353,18 @@ npm run build && npm run test:e2e   # browser tests against a fixture app
 
 `PH_FAKE_AGENT=1` adds a scripted `fake` agent used by the tests; it drives the real MCP endpoint, so the whole pipeline is exercised without an LLM.
 
+## Contributing
+
+Issues and pull requests are welcome at `https://github.com/TODO/page-harness` (placeholder until the public repo URL is final).
+
+- **Process:** Fork → create a branch → commit → open a PR
+- **Before you push:** `npm run lint`, `npm run typecheck` and `npm test`; for UI changes also `npm run build && npm run test:e2e`
+
+<!-- TODO(Tencent OSS): contributors image once the repo URL is final:
+[![Contributors](https://contrib.rocks/image?repo=TODO/page-harness)](https://github.com/TODO/page-harness/graphs/contributors) -->
+
 ## License
 
 [MIT](./LICENSE). Bundled third-party code is listed in [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md).
+
+<!-- TODO(Tencent OSS): copyright holder / Tencent attribution and any required compliance or security-contact section go here. -->

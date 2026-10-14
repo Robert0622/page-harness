@@ -41,7 +41,21 @@ export interface LiveModule {
 
 declare global {
   interface Window {
-    __PH_CONFIG?: { controlOrigin: string; appPort: number; target?: string; relay?: string | null }
+    __PH_CONFIG?: {
+      controlOrigin: string
+      appPort?: number
+      /** Proxied site host (`example.com` or `localhost:5173`). Absent for the bookmarklet. */
+      target?: string
+      relay?: string | null
+      /** Pick and Notes only: no chat, artifacts, Live or page control. */
+      noAgent?: boolean
+      /** Injected into an arbitrary page. Talks to the control server directly. */
+      bookmarklet?: boolean
+      /** Sent as X-PH-Token. Present only in the bookmarklet. */
+      token?: string
+      /** Startup `--lang`. When set, the dock stays in this language. */
+      lang?: Lang
+    }
     __phRelay?: boolean
     __phHost?: PageHost
     __phPageControl?: PageControlModule

@@ -1,13 +1,13 @@
 // The review layer on the page: numbered pins for notes, temporary changes applied in place,
 // threads, approvals, and the Notes list in the dock. People add notes ("Comment") and changes
 // ("Edit") here; the agent adds them through MCP. Changes only affect what reviewers see.
-import { normalizePath } from '@shared/paths'
+import { normalizeHost, normalizePath } from '@shared/paths'
 import type { HarnessMode, Lang, Me, ProbeResult, ReviewDraft, ReviewItem, ReviewLook, ReviewPatch, ReviewState, ToPanel } from '@shared/protocol'
 import { authorNotes, liveName, promptEntries, readerEntries, reviewPrompt, type ReaderEntry } from '@shared/review-read'
 import { anchorOf, locate } from '../shared/anchor'
 import { createPatcher } from '../shared/patcher'
 import { clip, inViewport, selectorFor, textOf } from '../shared/dom'
-import { snapshotLook } from '../shared/snapshot-image'
+import { markPage, pageBox, pageShot, snapshotLook } from '../shared/snapshot-image'
 import { shotElement } from '../shared/snapshot'
 import type { pageStrings } from '../shared/i18n-page'
 
@@ -22,8 +22,18 @@ export interface ReviewDeps {
   strings(): Strings
   lang(): Lang
   openPanel(): void
+  /** False in review-only mode: no quote-into-chat. */
+  quoting: boolean
+  /** When set, Export downloads Markdown instead of writing an artifact. */
+  onExport?: () => void
   /** Called when the Notes button or the dock should change. */
   onState(s: { count: number; elsewhere: number; visible: boolean; open: boolean; me: Me | null }): void
+}
+
+function siteHost(): string {
+  const cfg = window.__PH_CONFIG
+  const raw = cfg?.bookmarklet || !cfg?.target ? location.host : cfg.target
+  return normalizeHost(raw)
 }
 
 const PENDING_KEY = 'ph:rv-open'
@@ -78,6 +88,7 @@ export function createReview(d: ReviewDeps) {
   let tab: 'here' | 'all' = 'here'
   let popId: string | null = null
   let clearArmed = 0
+  let removeArmed: { id: string; until: number } | null = null
   let editor: { el: HTMLElement; restore(): void; before?: Promise<{ html: string; image?: string }> } | null = null
   let backfilling = false
   const lookSent = new Set<string>()
@@ -96,11 +107,13 @@ export function createReview(d: ReviewDeps) {
   form.dataset.testid = 'review-form'
   d.layer.append(hl, pins, pop, form, list)
 
-  const items = () => state.items
+  const items = () => state.items.filter((i) => i.host === siteHost())
   const onPage = (i: ReviewItem) => i.path === here()
   const pageItems = () => items().filter(onPage)
-  const entriesHere = () => readerEntries(pageItems())
-  const entryById = (id: string) => readerEntries(items()).find((e) => e.id === id || e.members.some((m) => m.id === id))
+  const read = (list: ReviewItem[]) => readerEntries(list, d.lang())
+  const entriesHere = () => read(pageItems())
+  const entryById = (id: string) => read(items()).find((e) => e.id === id || e.members.some((m) => m.id === id))
+  const person = (name: string) => (name === '匿名' || name === 'Anonymous' ? d.strings().anonymous : name)
   const owner = () => me?.access === 'owner'
   const canDelete = (i: ReviewItem) => owner() || i.author.id === me?.id
   const needName = () => {
@@ -160,8 +173,18 @@ export function createReview(d: ReviewDeps) {
       b.title = `${e.authorName}: ${clip(e.say, 120)}`
       b.dataset.id = e.id
       b.dataset.testid = 'review-pin'
-      const x = Math.min(Math.max(r.right - 12 - k * 24, 4), innerWidth - 26)
-      const y = Math.min(Math.max(r.top - 10, 4), innerHeight - 26)
+      const small = r.width < 48 || r.height < 28
+      const pinW = 28
+      const pinH = 22
+      let x = small ? r.right - pinW : r.right - 12
+      let y = small ? r.top - pinH - 4 : r.top - 10
+      if (small && y < 4) {
+        x = r.right + 4
+        y = r.top
+        if (x > innerWidth - pinW - 4) x = r.left - pinW - 4
+      }
+      x = Math.min(Math.max(x - k * 24, 4), innerWidth - pinW)
+      y = Math.min(Math.max(y, 4), innerHeight - pinH)
       if (r.bottom < 0 || r.top > innerHeight || r.right < 0 || r.left > innerWidth) b.hidden = true
       b.style.left = `${x}px`
       b.style.top = `${y}px`
@@ -219,15 +242,36 @@ export function createReview(d: ReviewDeps) {
     return s
   }
   const safeHtml = (html: string) => html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '').replace(/\son\w+=(?:"[^"]*"|'[^']*')/gi, '')
-  const pane = (cap: string, fillPane: (box: HTMLElement) => void) => {
+  const pane = (cap: string, fillPane: (box: HTMLElement) => void, onZoom?: () => void) => {
     const p = h('div', 'rv-pane')
     p.append(h('div', 'cap', cap))
     const box = h('div', 'rv-shot')
     fillPane(box)
+    if (onZoom && box.firstChild) {
+      box.classList.add('zoomable')
+      box.title = d.strings().zoomTitle
+      box.addEventListener('click', (e) => {
+        e.stopPropagation()
+        onZoom()
+      })
+    }
     p.append(box)
     return p
   }
-  const fillLook = (box: HTMLElement, image?: string, html?: string, text?: string) => {
+  /** Scales the HTML copy to fit the box; the popover may still be hidden, so it measures once laid out. */
+  const fitHtml = (box: HTMLElement, inner: HTMLElement, maxScale: number) => {
+    const ro = new ResizeObserver(() => {
+      if (!inner.isConnected) return ro.disconnect()
+      const w = inner.offsetWidth
+      const hgt = inner.offsetHeight
+      if (!w || !hgt || !box.clientWidth || !box.clientHeight) return
+      const s = Math.min(maxScale, box.clientWidth / w, box.clientHeight / hgt)
+      inner.style.transform = `translate(-50%, -50%) scale(${s})`
+    })
+    ro.observe(box)
+    ro.observe(inner)
+  }
+  const fillLook = (box: HTMLElement, image?: string, html?: string, text?: string, maxScale = 1) => {
     if (image) {
       const img = h('img', 'rv-shot-img')
       img.src = image
@@ -239,9 +283,50 @@ export function createReview(d: ReviewDeps) {
       const inner = h('div', 'rv-shot-html')
       inner.innerHTML = safeHtml(html)
       box.append(inner)
+      fitHtml(box, inner, maxScale)
       return
     }
     if (text) box.append(h('div', 'rv-mini', text))
+  }
+  let zoom: HTMLElement | null = null
+  const closeZoom = () => {
+    zoom?.remove()
+    zoom = null
+  }
+  const openZoom = (look: ReviewLook | undefined, beforeText?: string, afterText?: string) => {
+    closeZoom()
+    const mask = h('div', 'rv-zoom')
+    mask.dataset.testid = 'review-zoom'
+    mask.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (e.target === mask) closeZoom()
+    })
+    const card = h('div', 'rv-zoom-card card')
+    const head = h('div', 'rv-head')
+    const pair = h('div', 'rv-pair')
+    const t = d.strings()
+    const hasPage = !!(look?.beforePage || look?.afterPage)
+    const views: [string, boolean][] = [[t.lookWhole, true], [t.lookPart, false]]
+    const tabs = views.map(([label, page]) => {
+      const b = button('tab', label, () => show(page))
+      b.dataset.page = String(page)
+      return b
+    })
+    const show = (page: boolean) => {
+      for (const b of tabs) b.classList.toggle('on', b.dataset.page === String(page))
+      pair.replaceChildren(
+        pane(t.lookBefore, (box) => fillLook(box, page ? look?.beforePage : look?.beforeImage, page ? undefined : look?.beforeHtml, page ? undefined : beforeText, 2)),
+        pane(t.lookAfter, (box) => fillLook(box, page ? look?.afterPage : look?.afterImage, page ? undefined : look?.afterHtml, page ? undefined : afterText, 2)),
+      )
+    }
+    head.append(h('b', '', `${t.lookBefore} / ${t.lookAfter}`))
+    if (hasPage) head.append(...tabs)
+    head.append(h('span', 'sp'), button('x', '×', closeZoom))
+    show(hasPage)
+    card.append(head, pair)
+    mask.append(card)
+    d.layer.append(mask)
+    zoom = mask
   }
   /** Kept across re-renders: state updates from other reviewers rebuild the popover. */
   let editingId: string | null = null
@@ -306,7 +391,7 @@ export function createReview(d: ReviewDeps) {
     const body = h('div', 'rv-thread')
     const first = h('div', 'rv-msg')
     const live = liveName(entry)
-    first.append(byline(entry.authorName, i.author.kind, i.createdAt))
+    first.append(byline(person(entry.authorName), i.author.kind, i.createdAt))
     if (live) first.append(h('div', 'rv-by', live))
     const editable = entry.kind === 'note' && canDelete(i)
     if (editable && editingId === entry.id) first.append(noteEditor(i.id))
@@ -331,27 +416,28 @@ export function createReview(d: ReviewDeps) {
     if (entry.kind === 'patch') {
       const pair = h('div', 'rv-pair')
       pair.dataset.testid = 'review-pair'
+      const zoomIn = () => openZoom(look, beforeText, afterText)
       pair.append(
-        pane('改前', (box) => fillLook(box, look?.beforeImage, look?.beforeHtml, beforeText)),
-        pane('改后', (box) => fillLook(box, look?.afterImage, look?.afterHtml, afterText)),
+        pane(t.lookBefore, (box) => fillLook(box, look?.beforePage ?? look?.beforeImage, look?.beforeHtml, beforeText), zoomIn),
+        pane(t.lookAfter, (box) => fillLook(box, look?.afterPage ?? look?.afterImage, look?.afterHtml, afterText), zoomIn),
       )
       first.append(pair)
     } else if (i.anchor?.text) first.append(h('div', 'rv-quote', clip(i.anchor.text, 180)))
     if (!findEntryEl(entry) && (look?.beforeHtml || look?.beforeImage || look?.afterHtml || look?.afterImage))
-      first.append(h('div', 'rv-meta wrap', '元素已经不在页面上，下面仍是保存时的样子'))
+      first.append(h('div', 'rv-meta wrap', t.elementGone))
     body.append(first)
     for (const m of entry.members) {
       for (const r of m.replies) {
         const row = h('div', 'rv-msg reply')
-        row.append(byline(r.author.name, r.author.kind, r.at), h('div', 'rv-note', r.text))
+        row.append(byline(person(r.author.name), r.author.kind, r.at), h('div', 'rv-note', r.text))
         body.append(row)
       }
     }
     const tech = h('details', 'rv-tech')
-    tech.append(h('summary', '', '选择器和样式'))
+    tech.append(h('summary', '', t.selectorStyle))
     const pre = h('pre', 'rv-tech-body')
     pre.textContent = entry.lines
-      .map((l) => [l.selector, l.css, l.text ? `文字：${l.text}` : '', l.image ? `图片：${l.image}` : ''].filter(Boolean).join('\n'))
+      .map((l) => [l.selector, l.css, l.text ? `${t.textLabel} ${l.text}` : '', l.image ? `${t.imageLabel} ${l.image}` : ''].filter(Boolean).join('\n'))
       .join('\n\n')
     tech.append(pre)
     const replyBox = h('form', 'rv-reply')
@@ -369,7 +455,12 @@ export function createReview(d: ReviewDeps) {
     replyBox.append(input, button('primary send', t.reply, () => replyBox.requestSubmit()))
     replyBox.addEventListener('submit', (e) => {
       e.preventDefault()
-      if (!input.value.trim() || needName()) return
+      if (!input.value.trim()) {
+        d.toast('warn', t.replyEmpty)
+        input.focus()
+        return
+      }
+      if (needName()) return
       d.send({ type: 'ph:review-reply', id: i.id, text: input.value.trim() })
       input.value = ''
     })
@@ -394,7 +485,7 @@ export function createReview(d: ReviewDeps) {
           openPop(entry.id)
         }),
       )
-    if (owner())
+    if (owner() && d.quoting)
       foot.append(
         button('quote', t.quote, () => {
           const el = findEntryEl(entry)
@@ -412,7 +503,16 @@ export function createReview(d: ReviewDeps) {
       )
     if (entry.members.some((m) => canDelete(m)))
       foot.append(
-        button('danger remove', t.remove, () => {
+        button('danger remove', removeArmed?.id === entry.id && Date.now() < removeArmed.until ? t.removeConfirm : t.remove, () => {
+          if (!(removeArmed?.id === entry.id && Date.now() < removeArmed.until)) {
+            removeArmed = { id: entry.id, until: Date.now() + 3000 }
+            openPop(entry.id)
+            setTimeout(() => {
+              if (popId === entry.id) openPop(entry.id)
+            }, 3100)
+            return
+          }
+          removeArmed = null
           for (const m of entry.members) if (canDelete(m)) d.send({ type: 'ph:review-remove', id: m.id })
           openPop(null)
         }),
@@ -422,7 +522,7 @@ export function createReview(d: ReviewDeps) {
     renderPins()
   }
 
-  const draftBase = (el: HTMLElement) => ({ url: location.href, selector: selectorFor(el), anchor: anchorOf(el), label: labelOf(el) })
+  const draftBase = (el: HTMLElement) => ({ url: location.href, host: siteHost(), selector: selectorFor(el), anchor: anchorOf(el), label: labelOf(el) })
   /** The element the open comment/edit form is about; the form and its highlight follow it on scroll. */
   let formEl: HTMLElement | null = null
   const closeForm = () => {
@@ -483,7 +583,10 @@ export function createReview(d: ReviewDeps) {
       h('span', 'sp'),
       button('', t.cancel, closeForm),
       button('primary save', t.save, () => {
-        if (!note.value.trim()) return note.focus()
+        if (!note.value.trim()) {
+          d.toast('warn', t.noteEmpty)
+          return note.focus()
+        }
         const draft: ReviewDraft = { ...base, kind: 'note', note: note.value.trim(), severity: sev.value as ReviewDraft['severity'] }
         d.send({ type: 'ph:review-add', draft })
         closeForm()
@@ -619,7 +722,7 @@ export function createReview(d: ReviewDeps) {
   }
 
   // ---------- list ----------
-  const approvalsHere = () => state.approvals.filter((a) => a.path === here())
+  const approvalsHere = () => state.approvals.filter((a) => a.path === here() && a.host === siteHost())
   let copiedAt = 0
   const writeClipboard = async (text: string) => {
     try {
@@ -651,6 +754,8 @@ export function createReview(d: ReviewDeps) {
       scope: tab,
       lang: d.lang(),
       controlPort: controlPortOf(),
+      host: siteHost(),
+      apiBase: window.__PH_CONFIG?.bookmarklet ? window.__PH_CONFIG.controlOrigin : undefined,
     })
     if (!(await writeClipboard(text))) return d.toast('warn', t.copyFailed)
     copiedAt = Date.now() + 1500
@@ -670,7 +775,7 @@ export function createReview(d: ReviewDeps) {
     const ap = (status: 'approved' | 'changes', label: string) => {
       const b = button(`approve ${status}${mineAp?.status === status ? ' on' : ''}`, label, () => {
         if (needName()) return
-        d.send({ type: 'ph:review-approve', url: location.href, status: mineAp?.status === status ? null : status })
+        d.send({ type: 'ph:review-approve', url: location.href, host: siteHost(), status: mineAp?.status === status ? null : status })
       })
       b.dataset.testid = `review-${status}`
       return b
@@ -690,7 +795,7 @@ export function createReview(d: ReviewDeps) {
       b.dataset.testid = `review-tab-${k}`
       return b
     }
-    tabs.append(mk('here', `${t.tabHere} ${nHere}`), mk('all', `${t.tabAll} ${readerEntries(items()).length}`))
+    tabs.append(mk('here', `${t.tabHere} ${nHere}`), mk('all', `${t.tabAll} ${read(items()).length}`))
     const tog = h('label', 'rv-tog')
     const cb = h('input')
     cb.type = 'checkbox'
@@ -708,7 +813,7 @@ export function createReview(d: ReviewDeps) {
     tabs.append(h('span', 'sp'), tog)
 
     const rows = h('div', 'rv-rows')
-    const shown = readerEntries(tab === 'here' ? pageItems() : items())
+    const shown = read(tab === 'here' ? pageItems() : items())
     if (!shown.length) rows.append(h('div', 'rv-empty', tab === 'here' && items().length ? t.reviewEmptyHere : t.reviewEmpty))
     if (tab === 'here') rows.append(h('div', 'rv-tip', mode === 'review' ? t.reviewHowEdit : t.reviewHow))
     const groups = new Map<string, ReaderEntry[]>()
@@ -727,12 +832,12 @@ export function createReview(d: ReviewDeps) {
     cp.disabled = !promptEntries(items(), scopeOpts).length
     foot.append(h('span', 'sp'), cp)
     if (owner()) {
-      const exp = button('export', t.exportMd, () => d.send({ type: 'ph:review-export' }))
+      const exp = button('export', t.exportMd, () => (d.onExport ? d.onExport() : d.send({ type: 'ph:review-export' })))
       exp.disabled = !items().length
       const clr = button('danger clear', Date.now() < clearArmed ? t.clearConfirm : t.clearAll, () => {
         if (Date.now() < clearArmed) {
           clearArmed = 0
-          d.send({ type: 'ph:review-clear' })
+          d.send({ type: 'ph:review-clear', host: siteHost() })
         } else {
           clearArmed = Date.now() + 3000
           setTimeout(renderList, 3100)
@@ -754,12 +859,12 @@ export function createReview(d: ReviewDeps) {
     body.append(h('span', 'rv-text', e.say))
     const page = onPage(e.primary)
     const missing = page && !findEntryEl(e)
-    const bits = [e.authorName, sevLabel(e.primary)]
+    const bits = [person(e.authorName), sevLabel(e.primary)]
     const live = liveName(e)
     if (live) bits.push(live)
     for (const note of authorNotes(e)) bits.push(note)
     const replies = e.members.reduce((n, m) => n + m.replies.length, 0)
-    if (replies) bits.push(fill(t.replies, { n: replies }))
+    if (replies) bits.push(replies === 1 ? t.replyOne : fill(t.replies, { n: replies }))
     if (e.status === 'resolved') bits.push(t.resolved)
     if (missing) bits.push(t.detached)
     if (!page) bits.push(`${t.goPage} ${e.path}`)
@@ -791,7 +896,7 @@ export function createReview(d: ReviewDeps) {
   }
   const state_ = () => {
     const mine = entriesHere().filter((e) => e.status === 'open').length
-    const elsewhere = readerEntries(items().filter((i) => !onPage(i))).filter((e) => e.status === 'open').length
+    const elsewhere = read(items().filter((i) => !onPage(i))).filter((e) => e.status === 'open').length
     d.onState({ count: mine, elsewhere, visible: !!me, open: listOpen, me })
   }
 
@@ -801,20 +906,61 @@ export function createReview(d: ReviewDeps) {
     const todo = entriesHere().filter((e) => e.kind === 'patch' && !lookSent.has(e.id))
     if (!todo.length) return
     backfilling = true
+    // Open Live candidates patch the same elements and load after review changes, so they sit on top.
+    // Shots need the real original: undo the top layer first, and put the layers back in the same order.
+    // The Live script loads lazily and can arrive mid-way, so check again before every shot.
+    let live: typeof window.__phLive
+    const revertAll = () => {
+      for (const i of items()) if (i.kind === 'patch') patcher.revert(i.id)
+    }
+    const hideLive = () => {
+      if (live || !window.__phLive) return
+      live = window.__phLive
+      live.eye('down')
+      revertAll()
+      syncPatches()
+    }
     try {
+      const done: { e: ReaderEntry; el: HTMLElement; look: ReviewLook }[] = []
       for (const e of todo) {
         const el = findEntryEl(e)
         if (!el) continue
         lookSent.add(e.id)
+        hideLive()
         for (const m of e.members) if (m.patch) patcher.ensure(m.id, m.patch, () => find(m))
         const after = await snapshotLook(el)
+        hideLive()
         for (const m of e.members) patcher.revert(m.id)
         const before = await snapshotLook(el)
         syncPatches()
-        const look: ReviewLook = { beforeHtml: before.html, afterHtml: after.html, beforeImage: before.image, afterImage: after.image }
-        if (look.beforeHtml || look.afterHtml || look.beforeImage || look.afterImage) d.send({ type: 'ph:review-look', id: e.primary.id, look })
+        done.push({ e, el, look: { beforeHtml: before.html, afterHtml: after.html, beforeImage: before.image, afterImage: after.image } })
+      }
+      if (done.length) {
+        // One render per state for all entries; each entry gets its own outline on a copy.
+        const members = done.flatMap(({ e }) => e.members)
+        hideLive()
+        for (const m of members) if (m.patch) patcher.ensure(m.id, m.patch, () => find(m))
+        const afterBoxes = done.map(({ el }) => pageBox(el))
+        const afterShot = pageShot()
+        for (const m of members) patcher.revert(m.id)
+        const beforeBoxes = done.map(({ el }) => pageBox(el))
+        const beforeShot = pageShot()
+        syncPatches()
+        const [a, b] = await Promise.all([afterShot, beforeShot])
+        done.forEach(({ look }, i) => {
+          if (a) look.afterPage = markPage(a, afterBoxes[i])
+          if (b) look.beforePage = markPage(b, beforeBoxes[i])
+        })
+      }
+      for (const { e, look } of done) {
+        if (look.beforeHtml || look.afterHtml || look.beforeImage || look.afterImage || look.beforePage || look.afterPage) d.send({ type: 'ph:review-look', id: e.primary.id, look })
       }
     } finally {
+      if (live) {
+        revertAll()
+        syncPatches()
+        live.eye('up')
+      }
       backfilling = false
     }
   }
@@ -882,7 +1028,8 @@ export function createReview(d: ReviewDeps) {
     'keydown',
     (e) => {
       if (e.key !== 'Escape') return
-      if (!form.hidden) closeForm()
+      if (zoom) closeZoom()
+      else if (!form.hidden) closeForm()
       else if (popId) openPop(null)
       else if (listOpen) setList(false)
       else return

@@ -1,9 +1,11 @@
 // overlay.js — injected into every proxied HTML page. Renders the dock (Pick / Artifacts / Chat),
 // hosts the panel iframes and relays between them and the page over private MessagePorts.
+import { normalizeHost } from '@shared/paths'
 import { LIVE_VERSION, PAGE_CONTROL_VERSION, type Lang, type LiveSession, type Pick, type Theme, type ToPage, type ToPanel } from '@shared/protocol'
 import { followLayout, inViewport, makeWindow, pickOf, placeWindow, selectorFor } from '../shared/dom'
 import { defaultLang, pageStrings } from '../shared/i18n-page'
 import type { PageHost } from '../shared/page-host'
+import { startDirectReview } from './direct'
 import { installRelay } from './relay'
 import { createReview } from './review'
 import { OVERLAY_CSS } from './style'
@@ -45,12 +47,21 @@ function tabId(): string {
   return id
 }
 
+function siteHost(): string {
+  const cfg = window.__PH_CONFIG
+  const raw = cfg?.bookmarklet || !cfg?.target ? location.host : cfg.target
+  return normalizeHost(raw)
+}
+
 function init() {
   const cfg = window.__PH_CONFIG
   if (!cfg) return
+  const noAgent = !!cfg.noAgent || !!cfg.bookmarklet
+  const bookmarklet = !!cfg.bookmarklet
   const controlOrigin = cfg.controlOrigin
   const nonce = (document.currentScript as HTMLScriptElement | null)?.nonce || document.querySelector<HTMLScriptElement>('script[data-page-harness]')?.nonce || ''
-  let lang: Lang = defaultLang()
+  const forcedLang: Lang | null = cfg.lang === 'en' || cfg.lang === 'zh-CN' ? cfg.lang : null
+  let lang: Lang = forcedLang ?? defaultLang()
   let t = pageStrings(lang)
   let theme: Theme = (store.get<string>(localStorage, 'ph:theme', '') as Theme) || 'light'
   let tab = tabId()
@@ -94,6 +105,7 @@ function init() {
       </div>
     </div>
     <div class="dock">
+      <span class="who" hidden></span>
       <div class="bar">
         <button data-act="pick">${ICONS.pick}<span></span></button>
         <button data-act="eye" hidden>${ICONS.eye}<span></span></button>
@@ -118,18 +130,26 @@ function init() {
   const art = $('.art')
   const toastEl = $('.toast')
   const btn = (act: string) => $<HTMLButtonElement>(`.bar button[data-act="${act}"]`)
+  if (noAgent) {
+    btn('chat').hidden = true
+    btn('artifacts').hidden = true
+    btn('eye').hidden = true
+  }
 
-  const chatFrame = document.createElement('iframe')
-  chatFrame.src = `${controlOrigin}/__ph/ui#chat`
-  chatFrame.allow = 'clipboard-read; clipboard-write'
-  chatFrame.title = 'Page Harness chat'
-  drawer.appendChild(chatFrame)
+  let chatFrame: HTMLIFrameElement | null = null
+  if (!bookmarklet) {
+    chatFrame = document.createElement('iframe')
+    chatFrame.src = `${controlOrigin}/__ph/ui#chat`
+    chatFrame.allow = 'clipboard-read; clipboard-write'
+    chatFrame.title = 'Page Harness chat'
+    drawer.appendChild(chatFrame)
+  }
   let artFrame: HTMLIFrameElement | null = null
 
   // ---------- state ----------
   let chatPort: MessagePort | null = null
   let artPort: MessagePort | null = null
-  let ready = false
+  let ready = bookmarklet
   let picking = false
   let busy = false
   let controlOn = false
@@ -138,6 +158,7 @@ function init() {
   let uiHidden = false
   let reviewer = false
 
+  let directSend: ((m: ToPanel) => void) | null = null
   const sendChat = (m: ToPanel) => chatPort?.postMessage(m)
   const sendAll = (m: ToPanel) => {
     chatPort?.postMessage(m)
@@ -169,6 +190,15 @@ function init() {
     btn('review').querySelector('span')!.textContent = t.review
     review.relabel()
     btn('chat').querySelector('span')!.textContent = reviewer ? t.reviewer : t.chat
+    if (noAgent) {
+      const who = $<HTMLElement>('.who')
+      who.hidden = false
+      who.textContent = `${siteHost()} · ${t.reviewOnly}`
+      who.dataset.testid = 'review-host'
+      btn('chat').hidden = true
+      btn('artifacts').hidden = true
+      btn('eye').hidden = true
+    }
     $('.bt').textContent = t.brand
     $('.at').textContent = t.artifacts
     $('.collapse').title = t.collapse
@@ -212,6 +242,7 @@ function init() {
     onChange: (r) => store.set(localStorage, 'ph:drawer', { ...store.get(localStorage, 'ph:drawer', {}), r }),
   })
   const setDrawer = (open: boolean) => {
+    if (noAgent) open = false
     drawer.hidden = !open
     if (open) placeWindow(drawer, store.get<{ r?: Rect }>(localStorage, 'ph:drawer', {}).r ?? defaultDrawer())
     store.set(localStorage, 'ph:drawer', { ...store.get(localStorage, 'ph:drawer', {}), open })
@@ -224,6 +255,7 @@ function init() {
     onChange: (r) => store.set(sessionStorage, 'ph:art', r),
   })
   const setArtifacts = (open: boolean) => {
+    if (noAgent) open = false
     if (open && !ready) return
     if (open && !artFrame) {
       artFrame = document.createElement('iframe')
@@ -301,7 +333,7 @@ function init() {
     picking = on
     catcher.hidden = !on
     pickHint.hidden = !on
-    pickHint.textContent = reviewer ? t.pickTipReviewer : t.pickTip
+    pickHint.textContent = reviewer || noAgent ? t.pickTipReviewer : t.pickTip
     if (!on) {
       closePickBar()
       showHl(null)
@@ -330,7 +362,7 @@ function init() {
       fn()
     }
     const buttons: HTMLButtonElement[] = []
-    if (!reviewer)
+    if (!reviewer && !noAgent)
       buttons.push(
         act('quote', t.pickQuote, () => {
           addPick(el)
@@ -340,7 +372,7 @@ function init() {
       )
     buttons.push(act('comment', t.comment, done(() => review.comment(el)), 'primary-soft'))
     if (review.canEdit()) buttons.push(act('edit', t.edit, done(() => review.edit(el)), 'primary-soft'))
-    if (!reviewer && liveOn && window.__phLive) buttons.push(act('live', t.pickLive, () => window.__phLive?.design(el), 'primary'))
+    if (!reviewer && !noAgent && liveOn && window.__phLive) buttons.push(act('live', t.pickLive, () => window.__phLive?.design(el), 'primary'))
     buttons.push(act('close', '×', () => (closePickBar(), showHl(null)), 'x'))
     pickBar.replaceChildren(...buttons)
     pickBar.hidden = false
@@ -364,8 +396,8 @@ function init() {
     const el = chosen ? elementAt(e.clientX, e.clientY) : (hovered ?? elementAt(e.clientX, e.clientY))
     closePickBar()
     if (!el) return
-    if (!reviewer && liveOn && window.__phLive?.onPick(el)) return
-    if (e.shiftKey && !reviewer) return addPick(el)
+    if (!reviewer && !noAgent && liveOn && window.__phLive?.onPick(el)) return
+    if (e.shiftKey && !reviewer && !noAgent) return addPick(el)
     showPickActions(el)
   })
   addEventListener(
@@ -487,6 +519,7 @@ function init() {
         else chatPort?.postMessage({ type: 'ph:theme', theme })
         break
       case 'ph:lang':
+        if (forcedLang) break
         lang = m.lang
         t = pageStrings(lang)
         store.set(localStorage, 'ph:lang', lang)
@@ -494,6 +527,7 @@ function init() {
         window.__phLive?.setLang(lang)
         break
       case 'ph:control':
+        if (noAgent) return
         controlOn = m.on
         if (!m.on) cancelCmds()
         renderBanner()
@@ -512,6 +546,7 @@ function init() {
         cancelCmds(m.id)
         break
       case 'ph:live-caps':
+        if (noAgent) return
         liveOn = m.on
         if (m.on) void ensureLive().then(() => sendChat({ type: 'ph:caps', caps: caps() }))
         else {
@@ -540,6 +575,7 @@ function init() {
         review.probe(m.id, m.selector)
         break
       case 'ph:open':
+        if (noAgent) break
         if (m.what === 'artifacts') setArtifacts(true)
         else if (m.what === 'chat') setDrawer(true)
         else setArtifacts(false)
@@ -556,7 +592,7 @@ function init() {
       if (!d || d.type !== 'ph:hello') return
       const port = e.ports[0]
       if (!port) return
-      if (e.source === chatFrame.contentWindow && d.role === 'chat') {
+      if (chatFrame && e.source === chatFrame.contentWindow && d.role === 'chat') {
         e.stopImmediatePropagation()
         chatPort?.close()
         chatPort = port
@@ -589,6 +625,7 @@ function init() {
       renderBanner()
     },
     setEye(visible) {
+      if (noAgent) return
       btn('eye').hidden = !visible
     },
     setPicking,
@@ -600,14 +637,37 @@ function init() {
   const review = createReview({
     layer,
     isOwn,
-    send: (m) => sendChat(m),
+    send: (m) => (directSend ? directSend(m) : sendChat(m)),
     addPick: (el) => {
       addPick(el)
     },
     toast,
     strings: () => t,
     lang: () => lang,
-    openPanel: () => setDrawer(true),
+    openPanel: () => {
+      if (!noAgent) setDrawer(true)
+    },
+    quoting: !noAgent,
+    onExport: noAgent
+      ? () => {
+          const url = `${controlOrigin}/__ph/api/review/export.md?host=${encodeURIComponent(siteHost())}&lang=${lang}`
+          if (bookmarklet && cfg.token) {
+            void fetch(url, { headers: { Accept: 'text/markdown', 'X-PH-Token': cfg.token } })
+              .then(async (r) => {
+                if (!r.ok) throw new Error('export failed')
+                const blob = await r.blob()
+                const a = document.createElement('a')
+                a.href = URL.createObjectURL(blob)
+                a.download = `review-${siteHost()}.md`
+                a.click()
+                URL.revokeObjectURL(a.href)
+              })
+              .catch(() => toast('warn', t.reviewOffline))
+            return
+          }
+          window.open(url, '_blank', 'noopener')
+        }
+      : undefined,
     onState: ({ count, elsewhere, visible, open, me }) => {
       const b = btn('review')
       b.hidden = !visible
@@ -687,7 +747,26 @@ function init() {
 
   applyTheme()
   applyLang()
-  if (drawerState.open) setDrawer(true)
+  if (drawerState.open && !noAgent) setDrawer(true)
+  if (bookmarklet && cfg.token) {
+    review.setState({ items: [], approvals: [] }, 'review', { access: 'owner', id: 'owner', name: 'You' })
+    let offline = false
+    const direct = startDirectReview({
+      controlOrigin,
+      token: cfg.token,
+      host: siteHost(),
+      onState(reviewState, me) {
+        offline = false
+        review.setState(reviewState, 'review', me)
+      },
+      onError() {
+        if (offline) return
+        offline = true
+        toast('warn', t.reviewOffline)
+      },
+    })
+    directSend = (m) => direct.send(m)
+  }
 }
 
 installRelay(window.__PH_CONFIG?.target, window.__PH_CONFIG?.relay)

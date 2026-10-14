@@ -283,6 +283,29 @@ describe('LiveManager state machine', () => {
     expect(m.open()).toHaveLength(0)
   })
 
+  it('revise asks for a whole new set of page-change candidates', () => {
+    const m = new LiveManager(mkdtempSync(path.join(os.tmpdir(), 'ph-live-')), true)
+    const { sid } = m.request('c', { op: 'generate', target, prompt: 'bolder' })!
+    m.setPatchVariants('c', sid, [
+      { label: 'A', changes: [{ selector: 'h1', patch: { style: { color: 'red' } } }] },
+      { label: 'B', changes: [{ selector: 'h1', patch: { style: { color: 'blue' } } }] },
+    ])
+    expect(() => m.request('c', { op: 'revise', sid, prompt: ' ' })).toThrow(/describe/)
+    const plan = m.request('c', { op: 'revise', sid, prompt: 'more air' })!
+    expect(m.get(sid)!.status).toBe('generating')
+    expect(plan.summary).toBe('Live · revise all — more air')
+    expect(plan.agentText).toContain('op: revise')
+    expect(plan.agentText).toContain('original request: bolder')
+    expect(plan.agentText).toContain('current candidate 2 (B):')
+    expect(plan.agentText).toContain(target.outerHTML)
+    m.setPatchVariants('c', sid, [
+      { label: 'C', changes: [{ selector: 'h1', patch: { style: { padding: '40px' } } }] },
+      { label: 'D', changes: [{ selector: 'h1', patch: { style: { padding: '64px' } } }] },
+      { label: 'E', changes: [{ selector: 'h1', patch: { style: { padding: '80px' } } }] },
+    ])
+    expect(m.get(sid)).toMatchObject({ status: 'ready', variants: [{ label: 'C' }, { label: 'D' }, { label: 'E' }] })
+  })
+
   it('discarding a failure that left the source untouched closes it without an agent turn', () => {
     const m = mk()
     const a = m.request('c', { op: 'steer', prompt: 'blue' })!

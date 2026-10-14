@@ -8,8 +8,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { AgentRegistry } from '../agents'
-import type { ClientMsg, ServerMsg } from '../shared/protocol'
-import { REVIEW_PAGE_SIZE } from '../shared/review-read'
+import type { ClientMsg, Lang, ReviewDraft, ReviewItem, ReviewLook, ServerMsg } from '../shared/protocol'
+import { normalizeHost } from '../shared/paths'
+import { REVIEW_PAGE_SIZE, reviewMarkdown, reviewPrompt } from '../shared/review-read'
+import { safeEqual } from './auth'
+import { HOME_CSS, HOME_JS, homeFontFile, homeHtml, packageVersion } from './homePage'
 import { newId } from '../shared/util'
 import type { ArtifactStore } from './artifacts'
 import type { Auth, Who } from './auth'
@@ -52,7 +55,8 @@ export function clientDir(): string {
 }
 
 export interface AppOptions {
-  target: URL
+  /** Absent in bookmarklet mode: only the control port listens. */
+  target?: URL
   host: string
   appPort: number
   controlPort: number
@@ -64,6 +68,12 @@ export interface AppOptions {
   uploads: Uploads
   live: LiveManager
   keepHost?: boolean
+  noAgent?: boolean
+  /** Home page and direct overlay injection, no reverse proxy. */
+  bookmarklet?: boolean
+  bookmarkletToken?: string
+  /** Forces the home page and the injected dock language. */
+  lang?: Lang
 }
 
 class HttpError extends Error {
@@ -138,7 +148,7 @@ function serveFile(res: ServerResponse, file: string, extra: Record<string, stri
 }
 
 export interface Servers {
-  app: Server
+  app: Server | null
   control: Server
   close(): Promise<void>
 }
@@ -149,7 +159,7 @@ export async function startServers(o: AppOptions): Promise<Servers> {
   const appDir = path.join(dir, 'app')
   const controlOrigin = (req: IncomingMessage) => o.auth.origin(hostname(req), o.controlPort)
   const appOrigin = (req: IncomingMessage) => o.auth.origin(hostname(req), o.appPort)
-  const proxy = createProxy({ target: o.target, cookieName: o.auth.cookieName, controlOrigin, keepHost: o.keepHost, scheme: o.auth.scheme })
+  const proxy = o.target ? createProxy({ target: o.target, cookieName: o.auth.cookieName, controlOrigin, keepHost: o.keepHost, scheme: o.auth.scheme }) : null
 
   // ---------- app port ----------
   const pageScripts: Record<string, string> = {
@@ -157,7 +167,7 @@ export async function startServers(o: AppOptions): Promise<Servers> {
     '/__ph/page-control.js': 'page-control.js',
     '/__ph/live-overlay.js': 'live-overlay.js',
   }
-  const app = http.createServer((req, res) => {
+  const app = proxy && o.target ? http.createServer((req, res) => {
     try {
       serveApp(req, res)
     } catch (e) {
@@ -165,8 +175,9 @@ export async function startServers(o: AppOptions): Promise<Servers> {
       if (!res.headersSent) send(res, 500, 'page-harness: internal error')
       else res.end()
     }
-  })
+  }) : null
   const serveApp = (req: IncomingMessage, res: ServerResponse) => {
+    if (!proxy || !o.target) return send(res, 500, 'page-harness: proxy is not running')
     if (!o.auth.checkHost(req, o.appPort)) return send(res, 421, 'page-harness: unexpected Host header')
     if (!o.auth.allowApp(req)) return noAccess(res, 'Open this page with the invite link from the person running Page Harness.<br>请使用 Page Harness 发起人分享的邀请链接打开。')
     const url = new URL(req.url ?? '/', 'http://x')
@@ -180,12 +191,14 @@ export async function startServers(o: AppOptions): Promise<Servers> {
       const p = path.join(pageDir, file)
       if (!existsSync(p)) return send(res, 503, `/* page-harness: ${file} missing, run npm run build */`, 'text/javascript')
       let body = readFileSync(p, 'utf8')
-      if (file === 'overlay.js') body = `window.__PH_CONFIG=${JSON.stringify({ controlOrigin: controlOrigin(req), appPort: o.appPort, target: o.target.host, relay: proxy.site })};\n` + body
+      if (file === 'overlay.js') {
+        body = `window.__PH_CONFIG=${JSON.stringify({ controlOrigin: controlOrigin(req), appPort: o.appPort, target: o.target.host, relay: proxy.site, ...(o.noAgent ? { noAgent: true } : {}), ...(o.lang ? { lang: o.lang } : {}) })};\n` + body
+      }
       return send(res, 200, body, 'text/javascript; charset=utf-8', { 'Cross-Origin-Resource-Policy': 'same-origin' })
     }
     proxy.handle(req, res)
   }
-  app.on('upgrade', (req, socket, head) => {
+  if (app && proxy) app.on('upgrade', (req, socket, head) => {
     try {
       const u = req.url ?? ''
       if (!o.auth.checkHost(req, o.appPort) || !o.auth.allowApp(req) || (u.startsWith('/__ph/') && !u.startsWith(RELAY_PREFIX))) return socket.destroy()
@@ -240,7 +253,34 @@ export async function startServers(o: AppOptions): Promise<Servers> {
       if (!o.auth.checkHost(req, o.controlPort)) return send(res, 421, 'page-harness: unexpected Host header')
       const url = new URL(req.url ?? '/', 'http://x')
       const p = url.pathname
+      if (req.method === 'OPTIONS' && (p === '/__ph/overlay.js' || p.startsWith('/__ph/api/review'))) {
+        bookmarkletCors(req, res)
+        res.writeHead(204, { 'Cache-Control': 'no-store' })
+        return res.end()
+      }
+      if (o.bookmarklet && (p === '/' || p === '/__ph' || p === '/__ph/' || p === '/__ph/home') && req.method === 'GET') {
+        o.auth.issuePageSession(req, res)
+        return send(res, 200, homeHtml({ token: o.bookmarkletToken ?? '', version: packageVersion(), lang: o.lang }), 'text/html; charset=utf-8', {
+          'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+          'Referrer-Policy': 'no-referrer',
+        })
+      }
+      if (p === '/__ph/home.css' && req.method === 'GET') return send(res, 200, HOME_CSS, 'text/css; charset=utf-8')
+      if (p.startsWith('/__ph/home/font/') && req.method === 'GET') {
+        const file = homeFontFile(decodeURIComponent(p.slice('/__ph/home/font/'.length)))
+        if (!file) return send(res, 404, 'not found')
+        return send(res, 200, readFileSync(file), 'font/woff2', { 'Cache-Control': 'public, max-age=86400' })
+      }
+      if (p === '/__ph/home.js' && req.method === 'GET') return send(res, 200, HOME_JS, 'text/javascript; charset=utf-8')
+      if (p === '/__ph/overlay.js' && req.method === 'GET') {
+        const file = path.join(pageDir, 'overlay.js')
+        if (!existsSync(file)) return send(res, 503, '/* page-harness: overlay.js missing, run npm run build */', 'text/javascript')
+        bookmarkletCors(req, res)
+        res.setHeader('Access-Control-Allow-Private-Network', 'true')
+        return send(res, 200, readFileSync(file), 'text/javascript; charset=utf-8')
+      }
       if (p === '/__ph/mcp') {
+        if (o.noAgent) return json(res, { error: 'this session has no agent' }, 403)
         const r = o.auth.checkMcp(req)
         if ('error' in r) return json(res, { jsonrpc: '2.0', error: { code: -32001, message: r.error }, id: null }, 401)
         const body = req.method === 'POST' ? await readJsonBody(req, 32 << 20) : undefined
@@ -264,8 +304,7 @@ export async function startServers(o: AppOptions): Promise<Servers> {
         if (!file.startsWith(appDir + path.sep) || rel.endsWith('.html')) return send(res, 404, 'not found')
         return serveFile(res, file, {}, rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
       }
-      if (req.method === 'GET' && p === '/__ph/api/review') return serveReviewPage(o.gateway, res, url)
-      if (req.method === 'POST' && p === '/__ph/api/review/resolve') return await serveReviewResolve(o.gateway, req, res)
+      if (p.startsWith('/__ph/api/review') && (await serveReviewExtras(o, req, res, url))) return
       if (p.startsWith('/__ph/api/')) {
         const err = o.auth.checkUi(req)
         if (err) return json(res, { error: err }, 403)
@@ -338,7 +377,7 @@ export async function startServers(o: AppOptions): Promise<Servers> {
     })
   }
 
-  await listen(app, o.appPort, o.host)
+  if (app) await listen(app, o.appPort, o.host)
   await listen(control, o.controlPort, o.host)
 
   return {
@@ -346,7 +385,8 @@ export async function startServers(o: AppOptions): Promise<Servers> {
     control,
     async close() {
       for (const c of wss.clients) c.terminate()
-      await Promise.all([app, control].map((s) => new Promise<void>((r) => (s.closeAllConnections(), s.close(() => r())))))
+      const open = app ? [app, control] : [control]
+      await Promise.all(open.map((s) => new Promise<void>((r) => (s.closeAllConnections(), s.close(() => r())))))
     },
   }
 }
@@ -366,13 +406,172 @@ function listen(server: Server, port: number, host: string): Promise<void> {
 
 // ---------- local review API (no session; paging and resolve only) ----------
 
+/** Cross-origin bookmarklet calls. Reflects Origin only so a public page can reach 127.0.0.1. */
+function bookmarkletCors(req: IncomingMessage, res: ServerResponse) {
+  const origin = req.headers.origin
+  if (typeof origin === 'string' && /^https?:\/\//i.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+    res.setHeader('Vary', 'Origin')
+  }
+  res.setHeader('Access-Control-Allow-Private-Network', 'true')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, X-PH-Token')
+  res.setHeader('Access-Control-Max-Age', '600')
+}
+
+function requestToken(req: IncomingMessage): string {
+  const header = req.headers['x-ph-token']
+  return typeof header === 'string' ? header : ''
+}
+
+function tokenOk(o: AppOptions, req: IncomingMessage): boolean {
+  const token = o.bookmarkletToken
+  const got = requestToken(req)
+  if (!token || !got) return false
+  return safeEqual(got, token)
+}
+
+/** A browser Origin that is not this control server. Curl has no Origin. */
+function foreignOrigin(o: AppOptions, req: IncomingMessage): boolean {
+  const origin = req.headers.origin
+  if (typeof origin !== 'string' || !origin) return false
+  return origin !== `${o.auth.scheme}://${req.headers.host}`
+}
+
+/** Same-origin and curl may read. A foreign page needs the bookmarklet token, and then CORS. */
+function allowForeignRead(o: AppOptions, req: IncomingMessage, res: ServerResponse): boolean {
+  if (!foreignOrigin(o, req)) return true
+  if (!tokenOk(o, req)) return false
+  bookmarkletCors(req, res)
+  return true
+}
+
+function hostParam(url: URL): string | null {
+  const raw = url.searchParams.get('host')
+  if (raw === null) return null
+  if (raw === '') return ''
+  const host = normalizeHost(raw)
+  return host || null
+}
+
+function siteUrl(host: string): string {
+  const name = host.replace(/:\d+$/, '')
+  const local = name === 'localhost' || name.endsWith('.localhost') || name === '127.0.0.1' || name === '::1' || name.startsWith('192.168.') || name.startsWith('10.')
+  return `${local ? 'http' : 'https'}://${host}`
+}
+
+function slimItem(item: ReviewItem) {
+  return {
+    n: item.n,
+    kind: item.kind,
+    severity: item.severity,
+    status: item.status,
+    path: item.path,
+    selector: item.selector,
+    note: item.note,
+    text: item.anchor?.text,
+    author: item.author.name,
+  }
+}
+
+function opMessage(body: { op?: string; draft?: ReviewDraft; id?: string; text?: string; note?: string; status?: string; url?: string; host?: string; look?: ReviewLook }): ClientMsg | null {
+  const host = typeof body.host === 'string' ? body.host : undefined
+  switch (body.op) {
+    case 'add':
+      return body.draft ? { type: 'review_add', draft: { ...body.draft, host: body.draft.host || host } } : null
+    case 'reply':
+      return { type: 'review_reply', id: String(body.id ?? ''), text: String(body.text ?? '') }
+    case 'edit':
+      return { type: 'review_edit', id: String(body.id ?? ''), note: String(body.note ?? '') }
+    case 'status':
+      return { type: 'review_status', id: String(body.id ?? ''), status: body.status === 'resolved' ? 'resolved' : 'open' }
+    case 'approve':
+      return { type: 'review_approve', url: String(body.url ?? '/'), status: body.status === 'approved' || body.status === 'changes' ? body.status : null, host }
+    case 'remove':
+      return { type: 'review_remove', id: String(body.id ?? '') }
+    case 'look':
+      return body.look ? { type: 'review_look', id: String(body.id ?? ''), look: body.look } : null
+    case 'clear':
+      return host ? { type: 'review_clear', host } : null
+    default:
+      return null
+  }
+}
+
+/** Local review reads, plus the bookmarklet write API. Returns true when the path was handled. */
+async function serveReviewExtras(o: AppOptions, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  const p = url.pathname
+  const m = req.method ?? 'GET'
+  if (m === 'GET' && p === '/__ph/api/review') {
+    serveReviewPage(o.gateway, res, url)
+    return true
+  }
+  if (m === 'POST' && p === '/__ph/api/review/resolve') {
+    await serveReviewResolve(o.gateway, req, res)
+    return true
+  }
+  if (m === 'GET' && p === '/__ph/api/review/sites') {
+    if (!allowForeignRead(o, req, res)) return json(res, { error: 'missing token' }, 403), true
+    json(res, { sites: o.gateway.reviewSites() })
+    return true
+  }
+  if (m === 'GET' && (p === '/__ph/api/review/host' || p === '/__ph/api/review/export.md' || p === '/__ph/api/review/export.json' || p === '/__ph/api/review/prompt' || p === '/__ph/api/review/state')) {
+    const host = hostParam(url)
+    if (host === null) return json(res, { error: 'host' }, 400), true
+    if (p === '/__ph/api/review/state') {
+      if (!tokenOk(o, req)) return json(res, { error: 'missing token' }, 403), true
+      bookmarkletCors(req, res)
+      return json(res, { review: o.gateway.reviewSlice(host), me: o.gateway.ownerMe(), mode: 'review' }), true
+    }
+    if (!allowForeignRead(o, req, res)) return json(res, { error: 'missing token' }, 403), true
+    const slice = o.gateway.reviewSlice(host)
+    if (p === '/__ph/api/review/host') return json(res, { host, items: slice.items.map(slimItem) }), true
+    const fileHost = (host || 'ungrouped').replace(/[^\w.-]+/g, '_')
+    const lang = url.searchParams.get('lang') === 'en' ? 'en' : 'zh-CN'
+    if (p === '/__ph/api/review/export.md') {
+      const md = reviewMarkdown(siteUrl(host), slice.items, slice.approvals, lang)
+      return send(res, 200, md, 'text/markdown; charset=utf-8', { 'Content-Disposition': `attachment; filename="review-${fileHost}.md"` }), true
+    }
+    if (p === '/__ph/api/review/export.json') {
+      return send(res, 200, JSON.stringify({ host, items: slice.items, approvals: slice.approvals }, null, 2), 'application/json; charset=utf-8', {
+        'Content-Disposition': `attachment; filename="review-${fileHost}.json"`,
+      }), true
+    }
+    const page = siteUrl(host)
+    const text = reviewPrompt(slice.items, {
+      site: page,
+      path: '/',
+      url: `${page}/`,
+      scope: 'all',
+      lang,
+      host,
+      apiBase: o.auth.origin(hostname(req), o.controlPort),
+    })
+    return send(res, 200, text, 'text/plain; charset=utf-8'), true
+  }
+  if (m === 'POST' && p === '/__ph/api/review/op') {
+    if (!tokenOk(o, req)) return json(res, { error: 'missing token' }, 403), true
+    bookmarkletCors(req, res)
+    const body = await readJsonBody<{ op?: string; draft?: ReviewDraft; id?: string; text?: string; note?: string; status?: string; url?: string; host?: string; look?: ReviewLook }>(req, 2 << 20)
+    const msg = opMessage(body)
+    if (!msg) return json(res, { error: 'bad op' }, 400), true
+    o.gateway.runOwnerReview(msg)
+    const host = normalizeHost(String(body.host || body.draft?.host || ''))
+    return json(res, { review: o.gateway.reviewSlice(host), me: o.gateway.ownerMe(), mode: 'review' }), true
+  }
+  return false
+}
+
 function serveReviewPage(gateway: Gateway, res: ServerResponse, url: URL): void {
   const scope = url.searchParams.get('scope')
   if (scope !== 'here' && scope !== 'all') return json(res, { ok: false, error: 'scope' }, 400)
   const page = positiveInt(url.searchParams.get('page'), 1)
   const pageSize = positiveInt(url.searchParams.get('pageSize'), REVIEW_PAGE_SIZE)
   if (page === null || pageSize === null) return json(res, { ok: false, error: 'page' }, 400)
-  json(res, gateway.listReviewPage({ scope, path: url.searchParams.get('path') ?? '/', page, pageSize }))
+  const hostRaw = url.searchParams.get('host')
+  const host = hostRaw === null ? undefined : hostParam(url)
+  if (hostRaw !== null && host === null) return json(res, { ok: false, error: 'host' }, 400)
+  json(res, gateway.listReviewPage({ scope, path: url.searchParams.get('path') ?? '/', page, pageSize, host: hostRaw === null ? undefined : host! }))
 }
 
 async function serveReviewResolve(gateway: Gateway, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -395,7 +594,7 @@ function createApi(o: AppOptions) {
     const [a, b, c] = parts
 
     if (a === 'config' && m === 'GET') {
-      return json(res, { project: o.project, target: o.target.href, agents: registry.list(), defaultAgent: gateway.o.defaultAgent })
+      return json(res, { project: o.project, target: o.target?.href ?? '', agents: registry.list(), defaultAgent: gateway.o.defaultAgent })
     }
     if (a === 'agents') {
       if (!b && m === 'GET') return json(res, registry.list())

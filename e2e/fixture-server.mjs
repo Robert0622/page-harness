@@ -35,15 +35,27 @@ http
     console.log(`fixture on http://127.0.0.1:${port}`)
     // A second harness in front of the same app, forced into review mode (no source to edit).
     const reviewProject = path.join(here, '.tmp', 'review-project')
+    const bookmarkletProject = path.join(here, '.tmp', 'bookmarklet-project')
+    const noAgentProject = path.join(here, '.tmp', 'noagent-project')
     mkdirSync(reviewProject, { recursive: true })
+    mkdirSync(bookmarkletProject, { recursive: true })
+    mkdirSync(noAgentProject, { recursive: true })
     const reviewPort = Number(process.env.REVIEW_PORT ?? appPort + 4)
+    const noAgentPort = Number(process.env.NOAGENT_PORT ?? appPort + 6)
+    const bookmarkletPort = Number(process.env.BOOKMARKLET_PORT ?? appPort + 8)
+    const cli = path.join(here, '..', 'dist', 'cli.js')
     const harness = (dir, p, extra = []) =>
-      spawn(
-        process.execPath,
-        [path.join(here, '..', 'dist', 'cli.js'), `http://127.0.0.1:${port}`, '--project', dir, '--agent', 'fake', '--port', String(p), '--control-port', String(p + 1), ...extra],
-        { stdio: 'inherit', env: { ...process.env, PH_FAKE_AGENT: '1' } },
-      )
-    const clis = [harness(project, appPort), harness(reviewProject, reviewPort, ['--review', '--share', '--host', '127.0.0.1'])]
+      spawn(process.execPath, [cli, `http://127.0.0.1:${port}`, '--project', dir, '--agent', 'fake', '--port', String(p), '--control-port', String(p + 1), ...extra], {
+        stdio: 'inherit',
+        env: { ...process.env, PH_FAKE_AGENT: '1' },
+      })
+    const bare = (args) => spawn(process.execPath, [cli, ...args], { stdio: 'inherit', env: { ...process.env, PH_FAKE_AGENT: '1' } })
+    const clis = [
+      harness(project, appPort),
+      harness(reviewProject, reviewPort, ['--review', '--share', '--host', '127.0.0.1']),
+      bare(['--project', bookmarkletProject, '--control-port', String(bookmarkletPort), '--host', '127.0.0.1']),
+      bare([`http://127.0.0.1:${port}`, '--project', noAgentProject, '--no-agent', '--port', String(noAgentPort), '--control-port', String(noAgentPort + 1), '--host', '127.0.0.1']),
+    ]
     const stop = () => clis.forEach((c) => c.kill('SIGTERM'))
     process.on('SIGTERM', () => (stop(), process.exit(0)))
     process.on('SIGINT', () => (stop(), process.exit(0)))
