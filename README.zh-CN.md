@@ -24,10 +24,6 @@
   <a href="#开发">开发</a>
 </p>
 
-<p align="center">
-  <img src="docs/hero-zh.webp" width="720" alt="page-harness">
-</p>
-
 https://github.com/user-attachments/assets/7fe5d123-58e2-4aa2-a5e3-f7fe9eae51b7
 
 ## 概览
