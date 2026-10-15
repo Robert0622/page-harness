@@ -24,10 +24,6 @@
   <a href="#development">Development</a>
 </p>
 
-<p align="center">
-  <img src="docs/hero.webp" width="720" alt="page-harness">
-</p>
-
 https://github.com/user-attachments/assets/113f12e7-c287-45d2-9f27-cb9158c539b2
 
 ## Overview
