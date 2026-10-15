@@ -53,10 +53,45 @@ function siteHost(): string {
   return normalizeHost(raw)
 }
 
+/** Configured parent origins (--embed-origin). */
+function embedAllowed(cfg = window.__PH_CONFIG): string[] {
+  return cfg?.embed ?? []
+}
+
+/** One-level iframe that may be the embedder. Firefox has no ancestorOrigins, so ph:hello confirms the parent. */
+function inEmbedFrame(cfg = window.__PH_CONFIG): boolean {
+  const allowed = embedAllowed(cfg)
+  if (!allowed.length || window.top === window || window.parent !== window.top) return false
+  const ancestor = location.ancestorOrigins?.[0]
+  if (ancestor !== undefined) return allowed.includes(ancestor)
+  return true
+}
+
+/** Parent origin already known to be allowed. Empty until ancestorOrigins or ph:hello confirms it. */
+function verifiedEmbedParent(cfg = window.__PH_CONFIG): string[] {
+  if (!inEmbedFrame(cfg)) return []
+  const ancestor = location.ancestorOrigins?.[0]
+  if (ancestor !== undefined && embedAllowed(cfg).includes(ancestor)) return [ancestor]
+  return []
+}
+
 function init() {
   const cfg = window.__PH_CONFIG
   if (!cfg) return
   const noAgent = !!cfg.noAgent || !!cfg.bookmarklet
+  const allowedEmbed = embedAllowed(cfg)
+  const embeddable = inEmbedFrame(cfg)
+  let parents = verifiedEmbedParent(cfg)
+  let quoteWait: Pick[] = []
+  const canQuote = !noAgent || embeddable
+  const deliverQuote = (pick: Pick) => {
+    const origin = parents[0]
+    if (!origin) {
+      quoteWait.push(pick)
+      return
+    }
+    window.parent.postMessage({ source: 'page-harness', type: 'ph:quote', pick }, origin)
+  }
   const bookmarklet = !!cfg.bookmarklet
   const controlOrigin = cfg.controlOrigin
   const nonce = (document.currentScript as HTMLScriptElement | null)?.nonce || document.querySelector<HTMLScriptElement>('script[data-page-harness]')?.nonce || ''
@@ -362,7 +397,7 @@ function init() {
       fn()
     }
     const buttons: HTMLButtonElement[] = []
-    if (!reviewer && !noAgent)
+    if (!reviewer && canQuote)
       buttons.push(
         act('quote', t.pickQuote, () => {
           addPick(el)
@@ -397,7 +432,7 @@ function init() {
     closePickBar()
     if (!el) return
     if (!reviewer && !noAgent && liveOn && window.__phLive?.onPick(el)) return
-    if (e.shiftKey && !reviewer && !noAgent) return addPick(el)
+    if (e.shiftKey && !reviewer && canQuote) return addPick(el)
     showPickActions(el)
   })
   addEventListener(
@@ -417,9 +452,43 @@ function init() {
     true,
   )
 
+  // The embedding parent points at quoted elements (hover a quote card to see it here).
+  if (embeddable) {
+    let flashTimer: ReturnType<typeof setTimeout> | undefined
+    addEventListener('message', (e) => {
+      if (e.source !== window.parent || !allowedEmbed.includes(e.origin)) return
+      const d = e.data as { source?: string; type?: string; selector?: string | null; scroll?: boolean } | null
+      if (!d || d.source !== 'page-harness-host') return
+      if (d.type === 'ph:hello') {
+        parents = [e.origin]
+        const queued = quoteWait
+        quoteWait = []
+        for (const pick of queued) window.parent.postMessage({ source: 'page-harness', type: 'ph:quote', pick }, e.origin)
+        return
+      }
+      if (d.type !== 'ph:highlight' || !parents.includes(e.origin) || chosen) return
+      clearTimeout(flashTimer)
+      let el: Element | null = null
+      try {
+        el = d.selector ? document.querySelector(d.selector) : null
+      } catch {
+        el = null
+      }
+      if (d.scroll && el) el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      showHl(el)
+      if (el && d.scroll) flashTimer = setTimeout(() => showHl(null), 1600)
+    })
+    followLayout(() => !picking && !chosen && placeHl())
+  }
+
   const QUEUE_KEY = 'ph:picks'
   const addPick = (el: Element) => {
     const pick = pickOf(el)
+    if (embeddable) {
+      deliverQuote(pick)
+      toast('ok', t.picked)
+      return
+    }
     if (ready && chatPort) {
       sendChat({ type: 'ph:pick', pick })
       toast('ok', t.picked)
@@ -647,7 +716,7 @@ function init() {
     openPanel: () => {
       if (!noAgent) setDrawer(true)
     },
-    quoting: !noAgent,
+    quoting: canQuote,
     onExport: noAgent
       ? () => {
           const url = `${controlOrigin}/__ph/api/review/export.md?host=${encodeURIComponent(siteHost())}&lang=${lang}`
@@ -771,7 +840,7 @@ function init() {
 
 installRelay(window.__PH_CONFIG?.target, window.__PH_CONFIG?.relay)
 
-if (window.top === window && !window.__phOverlay) {
+if ((window.top === window || inEmbedFrame()) && !window.__phOverlay) {
   window.__phOverlay = true
   if (document.documentElement) init()
   else document.addEventListener('DOMContentLoaded', init, { once: true })
