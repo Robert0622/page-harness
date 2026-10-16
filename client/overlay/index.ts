@@ -480,7 +480,7 @@ function init() {
       }
       if (d.type !== 'ph:highlight' || !parents.includes(e.origin) || chosen) return
       clearTimeout(flashTimer)
-      let el: Element | null = null
+      let el: Element | null
       try {
         el = d.selector ? document.querySelector(d.selector) : null
       } catch {
