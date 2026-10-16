@@ -61,6 +61,17 @@ window.__ModuleLoader__.load({
 .phd-icon{appearance:none;flex:none;width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);cursor:pointer;font:inherit;font-size:15px;line-height:1}
 .phd-icon:hover{background:var(--dsw-alias-interactive-bg-hover,#f3f4f6)}
 .phd-icon svg{width:15px;height:15px}
+.phd-icon:disabled{opacity:.5;cursor:default}
+.phd-sharebox{flex:none;display:flex;align-items:center;gap:2px}
+.phd-switch{appearance:none;display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px 0 4px;border:0;border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary,#4b5563);font:inherit;font-size:12px;line-height:1;cursor:pointer}
+.phd-switch:hover{background:var(--dsw-alias-interactive-bg-hover,#f3f4f6)}
+.phd-switch i{position:relative;flex:none;width:28px;height:16px;border-radius:999px;background:#a1a1aa;transition:background .15s ease}
+.phd-switch i::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s ease}
+.phd-switch[aria-checked=true]{color:var(--dsw-alias-label-primary,inherit)}
+.phd-switch[aria-checked=true] i{background:#059669}
+.phd-switch[aria-checked=true] i::after{transform:translateX(12px)}
+.phd-switch:disabled{cursor:default}
+.phd-switch.busy{opacity:.7}
 .phd-frame{flex:1;min-height:0;border:0;width:100%;background:#fff}
 .phd-empty{flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:24px;color:var(--dsw-alias-label-tertiary,#6b7280)}
 .phd-open{display:flex;gap:6px;margin-top:10px}
@@ -129,13 +140,14 @@ window.__ModuleLoader__.load({
       url: "页面地址（端口或 URL）", project: "项目目录（留空用上次的）", start: "启动分享", stop: "停止",
       copy: "复制链接", copied: "已复制", open: "打开", ports: "同事需要能访问端口 {a} 和 {b}",
       reviewOnly: "只评审：取点和意见", withAgent: "带 Agent", hint: "同事打开分享链接即可在页面上取点、留意见。",
-      preview: "预览", reload: "刷新", newTab: "在新标签打开", close: "关闭预览",
+      preview: "预览", reload: "刷新", newTab: "在新标签打开分享链接", newTabWait: "先打开分享", close: "关闭预览",
+      share: "分享", shareStop: "关闭分享",
       devTitle: "开发预览", devHint: "在对话右侧打开开发中的页面，可以取点引用到对话、留意见让 Agent 改。",
       devInput: "端口、URL 或工作区里的 HTML 文件", scanning: "正在查找本机的 dev server…", noServers: "没有发现运行中的 dev server。",
       needSession: "先打开一个会话，预览显示在对话右侧。", previewing: "正在预览", localServers: "本机运行中的页面",
       dragResize: "拖动调整宽度", dragOpen: "点击或向左拖动打开预览", tailAsk: "写了网页 {name}，要在右侧预览吗？", openPreview: "在右侧预览", produced: "产物", tailShowing: "{name} 正在右侧预览",
       scriptAsk: "改了 {name}，要开启预览吗？", startAndPreview: "启动服务并预览",
-      askStart: "启动这个项目的开发服务（刚改的 {name}），等它监听后用 page_harness_preview 在右侧预览。",
+      askStart: "用 page_harness_preview 预览刚改的 {name}。如果它说页面还没起来，只执行它给的那一条命令、在它给的目录里，等端口通了再用同一个地址调用一次。",
       serverChecking: "检测到启动了服务，正在查找端口…", serverUp: "服务已启动 {port}，要在右侧预览吗？",
       serverDown: "启动了服务，但 {port} 还没有响应。", serverUnknown: "启动了服务，但没找到它的端口。", serverPick: "启动了服务，要预览哪一个？",
       previewIn: "已在右侧预览", showPreview: "打开预览",
@@ -147,13 +159,14 @@ window.__ModuleLoader__.load({
       url: "Page (port or URL)", project: "Project directory (blank: last used)", start: "Start sharing", stop: "Stop",
       copy: "Copy link", copied: "Copied", open: "Open", ports: "Teammates need to reach ports {a} and {b}",
       reviewOnly: "Review only: Pick and Notes", withAgent: "With agent", hint: "Teammates open the link to pick elements and leave notes on the page.",
-      preview: "Preview", reload: "Reload", newTab: "Open in a new tab", close: "Close preview",
+      preview: "Preview", reload: "Reload", newTab: "Open the share link in a new tab", newTabWait: "Turn on sharing first", close: "Close preview",
+      share: "Share", shareStop: "Turn sharing off",
       devTitle: "Dev preview", devHint: "Open the page you are building next to the chat: pick elements to quote, or leave notes for the agent.",
       devInput: "Port, URL, or an HTML file in the workspace", scanning: "Looking for dev servers on this machine…", noServers: "No running dev server found.",
       needSession: "Open a session first: the preview shows next to the chat.", previewing: "Previewing", localServers: "Running on this machine",
       dragResize: "Drag to resize", dragOpen: "Click or drag left to open the preview", tailAsk: "Wrote {name}. Preview it on the right?", openPreview: "Preview on the right", produced: "Produced", tailShowing: "{name} is in the preview pane",
       scriptAsk: "Changed {name}. Start a preview?", startAndPreview: "Start the server and preview",
-      askStart: "Start this project's dev server (I just changed {name}), wait until it is listening, then show it with page_harness_preview.",
+      askStart: "Preview the file I just changed ({name}) with page_harness_preview. If it says the page is not up, run only the command it gives, in the directory it gives, then call page_harness_preview again with the same URL.",
       serverChecking: "A server was started; looking for its port…", serverUp: "Server is up on {port}. Preview it on the right?",
       serverDown: "A server was started, but {port} is not answering yet.", serverUnknown: "A server was started, but its port was not found.", serverPick: "A server was started. Which one to preview?",
       previewIn: "Shown in the preview pane", showPreview: "Show preview",
@@ -185,18 +198,6 @@ window.__ModuleLoader__.load({
       const body = await res.json().catch(() => ({}));
       if (!res.ok || body.ok === false) throw new Error(body.error || "HTTP " + res.status);
       return body;
-    }
-
-    function useStatus(initial) {
-      const [status, setStatus] = useState(initial || null);
-      const refresh = useCallback(() => api("status", {}).then(setStatus).catch(() => {}), []);
-      useEffect(() => { refresh(); }, [refresh]);
-      useEffect(() => {
-        if (!status || !status.starting) return;
-        const t = setTimeout(refresh, 1000);
-        return () => clearTimeout(t);
-      }, [status, refresh]);
-      return [status, setStatus, refresh];
     }
 
     function ShareLink({ url }) {
@@ -245,54 +246,6 @@ window.__ModuleLoader__.load({
         ) : null,
         children,
         error || (!s.running && s.error) ? h("div", { className: "phd-err" }, error || s.error) : null,
-      );
-    }
-
-    function SharePanel({ initialUrl }) {
-      useEffect(() => ensureCss(), []);
-      const [status, setStatus] = useStatus();
-      const [url, setUrl] = useState(initialUrl || "");
-      const [project, setProject] = useState("");
-      const [busy, setBusy] = useState(false);
-      const [error, setError] = useState("");
-      useEffect(() => {
-        if (status && status.target && !url) setUrl(status.target);
-      }, [status]);
-      const run = (method, payload) => {
-        setBusy(true);
-        setError("");
-        if (method === "start") setStatus((cur) => ({ ...(cur || {}), starting: true }));
-        api(method, payload)
-          .then(setStatus)
-          .catch((e) => {
-            setError(e.message || String(e));
-            api("status", {}).then(setStatus).catch(() => {});
-          })
-          .finally(() => setBusy(false));
-      };
-      const s = status || {};
-      return h(StatusCard, { status, busy, error, onStop: () => run("stop", {}) },
-        s.running ? null : h("div", null,
-          h("div", { className: "phd-sub" }, tr("hint")),
-          h("label", { className: "phd-field" }, tr("url"),
-            h("input", { value: url, placeholder: "5173", onChange: (e) => setUrl(e.target.value), onKeyDown: (e) => { if (e.key === "Enter" && url.trim()) run("start", { url, project }); } }),
-          ),
-          h("label", { className: "phd-field" }, tr("project"),
-            h("input", { value: project, placeholder: s.lastProject || "", onChange: (e) => setProject(e.target.value) }),
-          ),
-          h("div", { className: "phd-actions" },
-            h("button", { type: "button", className: "phd-btn primary", disabled: busy || !url.trim(), onClick: () => run("start", { url, project }) }, busy ? tr("starting") : tr("start")),
-          ),
-        ),
-      );
-    }
-
-    function ShareIcon() {
-      return h("svg", { viewBox: "0 0 16 16", fill: "none", "aria-hidden": "true" },
-        h("circle", { cx: "12", cy: "3.5", r: "2", stroke: "currentColor", strokeWidth: "1.4" }),
-        h("circle", { cx: "4", cy: "8", r: "2", stroke: "currentColor", strokeWidth: "1.4" }),
-        h("circle", { cx: "12", cy: "12.5", r: "2", stroke: "currentColor", strokeWidth: "1.4" }),
-        h("path", { d: "M5.8 7.1 10.2 4.4M5.8 8.9l4.4 2.7", stroke: "currentColor", strokeWidth: "1.4" }),
       );
     }
 
@@ -852,20 +805,41 @@ window.__ModuleLoader__.load({
       return QuotedUserNode;
     }
 
+    function shareSwitchOn(status) {
+      return !!(status && (status.running || status.starting));
+    }
+
+    function shareLinkOf(status) {
+      return status && status.running && status.shareUrl ? status.shareUrl : "";
+    }
+
+    function shareSwitchChecked(status, busy) {
+      return busy ? !(status && status.running) : shareSwitchOn(status);
+    }
+
     function PreviewPanel() {
       const s = usePreview();
       const [frameKey, setFrameKey] = useState(0);
-      const [sharing, setSharing] = useState(false);
+      const [share, setShare] = useState(null);
+      const [shareBusy, setShareBusy] = useState(false);
+      const [shareError, setShareError] = useState("");
       const origin = previewOrigin(s);
       const frame = previewFrame(s);
+      const refreshShare = useCallback(() => api("status", {}).then(setShare).catch(() => {}), []);
       useEffect(() => {
         refreshPreview().catch(() => {});
-      }, []);
+        refreshShare();
+      }, [refreshShare]);
       useEffect(() => {
         if (!s || !s.starting) return;
         const t = setTimeout(() => refreshPreview().catch(() => {}), 1000);
         return () => clearTimeout(t);
       }, [s]);
+      useEffect(() => {
+        if (!share || !share.starting) return;
+        const t = setTimeout(refreshShare, 1000);
+        return () => clearTimeout(t);
+      }, [share, refreshShare]);
       useEffect(() => {
         if (!origin) return;
         const onMessage = (e) => {
@@ -880,18 +854,47 @@ window.__ModuleLoader__.load({
         return () => window.removeEventListener("message", onMessage);
       }, [origin]);
       const src = frame.src;
-      let shareUrl = "";
-      try { if (src) shareUrl = new URL(s.page, s.target).href; } catch { /* ignore */ }
+      let pageUrl = "";
+      try { if (src && s) pageUrl = new URL(s.page, s.target).href; } catch { /* ignore */ }
+      const shareOn = shareSwitchOn(share);
+      const pending = shareBusy || !!(share && share.starting);
+      const shareLink = shareLinkOf(share);
+      const toggleShare = () => {
+        if (pending) return;
+        setShareBusy(true);
+        setShareError("");
+        const stopping = shareOn;
+        api(stopping ? "stop" : "start", stopping ? {} : { url: pageUrl, project: (s && s.project) || "" })
+          .then(setShare)
+          .catch((e) => {
+            setShareError(e.message || String(e));
+            refreshShare();
+          })
+          .finally(() => setShareBusy(false));
+      };
+      // The thumb follows the click immediately. `shareOn` is the server; while the request is in flight, show the side the user just chose.
+      const switched = shareSwitchChecked(share, shareBusy);
+      const newTabTitle = shareLink ? tr("newTab") + "\n" + shareLink : pending ? tr("starting") : tr("newTabWait");
       return h("div", { className: "phd-pane" },
         h("div", { className: "phd-bar" },
           h("div", { className: "phd-title phd-grow phd-ellipsis", title: s && s.label }, tr("preview") + (s && s.label ? " · " + s.label : "")),
           s && s.starting ? h("span", { className: "phd-badge off" }, tr("starting")) : null,
-          src ? h("button", { type: "button", className: "phd-icon" + (sharing ? " on" : ""), title: tr("title"), "aria-label": tr("title"), "aria-expanded": sharing, onClick: () => setSharing(!sharing) }, h(ShareIcon)) : null,
           src ? h("button", { type: "button", className: "phd-icon", title: tr("reload"), "aria-label": tr("reload"), onClick: () => setFrameKey((k) => k + 1) }, h(Icon, { d: ICON_RELOAD })) : null,
-          src ? h("button", { type: "button", className: "phd-icon", title: tr("newTab"), "aria-label": tr("newTab"), onClick: () => window.open(src, "_blank", "noopener") }, h(Icon, { d: ICON_EXTERNAL })) : null,
+          src ? h("div", { className: "phd-sharebox" },
+            h("button", {
+              type: "button", role: "switch", className: "phd-switch" + (pending ? " busy" : ""),
+              "aria-checked": switched, "aria-label": tr("share"), title: switched ? tr("shareStop") : tr("share"),
+              disabled: pending || (!switched && !pageUrl),
+              onClick: toggleShare,
+            }, h("i", { "aria-hidden": "true" }), h("span", null, tr("share"))),
+            h("button", {
+              type: "button", className: "phd-icon", title: newTabTitle, "aria-label": tr("newTab"),
+              disabled: !shareLink, onClick: () => window.open(shareLink, "_blank", "noopener"),
+            }, h(Icon, { d: ICON_EXTERNAL })),
+          ) : null,
           h("button", { type: "button", className: "phd-icon", title: tr("close"), "aria-label": tr("close"), onClick: closePane }, "×"),
         ),
-        src && sharing ? h("div", { className: "phd-share" }, h(SharePanel, { initialUrl: shareUrl })) : null,
+        shareError ? h("div", { className: "phd-err" }, shareError) : null,
         src
           ? h("iframe", {
             key: (s.rev || 0) + ":" + frameKey, className: "phd-frame", src, title: tr("preview"), allow: "clipboard-read; clipboard-write",
@@ -953,14 +956,23 @@ window.__ModuleLoader__.load({
       return { dragging, handlers: { onPointerDown } };
     }
 
+    /** Session the user is looking at. DSH 0.2's list has no `current`; the open one is retained by mainView. */
+    function viewedSessionId(st) {
+      if (!st || !st.byId) return "";
+      if (st.current && st.byId[st.current] && st.byId[st.current].blank === false) return st.current;
+      for (const session of Object.values(st.byId)) {
+        if (session && session.blank === false && session.retainedBy && session.retainedBy.mainView > 0) return session.id || "";
+      }
+      return "";
+    }
+
     function DockHost(props) {
       useEffect(() => ensureCss(), []);
       const d = useDock();
       const [, setTick] = useState(0);
       const anchor = React.useRef(null);
-      const hasSession = typeof props.useSessions === "function"
-        ? props.useSessions((st) => !!(st.current && st.byId[st.current] && st.byId[st.current].blank === false))
-        : !!currentSession();
+      const viewed = typeof props.useSessions === "function" ? props.useSessions(viewedSessionId) : "";
+      const hasSession = !!(viewed || currentSession());
       const open = d.open && hasSession;
       const width = dockWidth(d.width);
       useEffect(() => {
@@ -990,10 +1002,11 @@ window.__ModuleLoader__.load({
           ? h("div", { className: "phd-edge" + (dragging ? " dragging" : ""), role: "button", tabIndex: 0, title: tr("dragOpen"), "aria-label": tr("preview"), ...tab.handlers,
             onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") openPane(); } }, h(Icon, { d: ICON_PREVIEW }))
           : null;
+      const place = (node) => node && ReactDOM ? ReactDOM.createPortal(node, document.body) : node;
       return h(React.Fragment, null,
         h("span", { ref: anchor, hidden: true }),
-        body && ReactDOM ? ReactDOM.createPortal(body, document.body) : null,
-        dragging && ReactDOM ? ReactDOM.createPortal(h("div", { className: "phd-drag-shield" }), document.body) : null,
+        place(body),
+        place(dragging ? h("div", { className: "phd-drag-shield" }) : null),
       );
     }
 
@@ -1043,10 +1056,12 @@ window.__ModuleLoader__.load({
       if (running) sawRunning.current = true;
       const result = running ? null : findPreview(props, 0);
       useEffect(() => {
-        if (running || !result || !sawRunning.current) return;
+        if (running || !result) return;
+        const live = sawRunning.current;
         sawRunning.current = false;
         setPreview(result);
-        if (result.running || result.waitingForPage) {
+        // waitingForPage still needs this page's origin before page-harness can start.
+        if (result.waitingForPage || (live && result.running)) {
           refreshPreview().catch(() => {});
           openPane();
         }

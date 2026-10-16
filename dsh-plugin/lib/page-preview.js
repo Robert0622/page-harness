@@ -2,7 +2,9 @@
 // Plain files are served by a loopback static server; dev servers are proxied directly.
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
-import { PreviewManager, normalizeTarget } from './preview.js'
+import { agentPlan, isStaticProject, resolveProjectDir, waitForHttp } from './bring-up.js'
+import { renderPreview } from './host-utils.js'
+import { PreviewManager, assertLocalTarget } from './preview.js'
 import { StaticServer, pagePath, withinRoot } from './static.js'
 
 export class PagePreview {
@@ -10,6 +12,7 @@ export class PagePreview {
     this.manager = opts.manager ?? new PreviewManager()
     this.files = opts.files ?? new StaticServer()
     this.embedOrigin = ''
+    this.probe = opts.probe ?? ((url) => waitForHttp(url))
     this.request = null
     this.page = ''
     this.label = ''
@@ -41,13 +44,22 @@ export class PagePreview {
     if (!request) throw new Error('nothing to preview yet: pass a file path or a URL')
     this.request = request
     if (!this.embedOrigin) return this.status()
-    const cwd = path.resolve(request.cwd || process.cwd())
+    const cwd = resolveProjectDir(request.cwd || process.cwd(), request.url ? '' : request.path || 'index.html')
     let target, page, label
     if (request.url) {
-      const u = new URL(normalizeTarget(request.url))
-      target = u.origin + '/'
-      page = u.pathname + u.search + u.hash
-      label = u.href
+      const requested = assertLocalTarget(request.url)
+      const u = new URL(requested)
+      const up = await this.probe(requested)
+      if (!up.ok) {
+        if (!isStaticProject(cwd)) throw new Error(renderPreview(agentPlan(cwd, requested)))
+        target = (await this.files.serve(cwd, config.previewPort ? config.previewPort + 2 : 0)) + '/'
+        page = u.pathname + u.search + u.hash
+        label = path.basename(page.split(/[?#]/)[0]) || 'index.html'
+      } else {
+        target = u.origin + '/'
+        page = u.pathname + u.search + u.hash
+        label = u.href
+      }
     } else {
       let file = path.resolve(cwd, request.path || 'index.html')
       if (existsSync(file) && statSync(file).isDirectory()) file = path.join(file, 'index.html')

@@ -122,14 +122,21 @@ export class PreviewManager {
     if (!cli) throw new Error('page-harness CLI not found: run npm run build in the page-harness repo, or set cliPath')
     this.error = ''
     this.pending = this.launch(cli, run)
+    let retry = null
     try {
       await this.pending
     } catch (e) {
-      this.error = e instanceof Error ? e.message : String(e)
-      throw e
+      const msg = e instanceof Error ? e.message : String(e)
+      // One busy pair of ports is the usual miss. The next pair is port+2 because the control port is port+1.
+      if (!run._retried && run.port + 2 <= 65534 && /already in use|EADDRINUSE/i.test(msg)) retry = { ...run, port: run.port + 2, _retried: true }
+      else {
+        this.error = msg
+        throw e
+      }
     } finally {
       this.pending = null
     }
+    if (retry) return this.startOne(retry)
     return this.status()
   }
 

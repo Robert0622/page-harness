@@ -121,13 +121,42 @@ describe('PagePreview', () => {
     await assert.rejects(p.open({ url: 'http://169.254.169.254/', cwd }, config), /private-network/)
   })
 
-  it('previews a dev server URL and rejects missing files', async () => {
+  it('previews a dev server URL once it responds, and rejects missing files', async () => {
     const p = make()
+    p.probe = async () => ({ ok: true })
     p.setEmbedOrigin('http://localhost:3080')
     const s = await p.open({ url: '5173/app?x=1', cwd: tmp() }, config)
     assert.equal(s.target, 'http://localhost:5173/')
     assert.equal(s.page, '/app?x=1')
     await assert.rejects(p.open({ path: 'nope.html', cwd: tmp() }, config), /file not found/)
+  })
+
+  it('serves a static site itself when the given URL is down', async () => {
+    const cwd = tmp()
+    writeFileSync(path.join(cwd, 'index.html'), 'x')
+    const calls = []
+    const manager = new PreviewManager({ spawn: (cmd, args, opts) => (calls.push(args), spawn(cmd, args, opts)) })
+    const p = new PagePreview({ manager, probe: async () => ({ ok: false }) })
+    cleanup.push(() => p.dispose())
+    p.setEmbedOrigin('http://localhost:3080')
+    const s = await p.open({ url: 'http://127.0.0.1:8000/index.html', cwd }, config)
+    assert.equal(s.running, true)
+    assert.equal(s.page, '/index.html')
+    assert.match(calls[0][1], /^http:\/\/127\.0\.0\.1:\d+\/$/)
+    assert.doesNotMatch(calls[0][1], /:8000/)
+  })
+
+  it('asks the agent to start a dev server instead of previewing a dead URL', async () => {
+    const cwd = tmp()
+    writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ scripts: { dev: 'vite' } }))
+    const calls = []
+    const manager = new PreviewManager({ spawn: (cmd, args, opts) => (calls.push(args), spawn(cmd, args, opts)) })
+    const p = new PagePreview({ manager, probe: async () => ({ ok: false, error: 'ECONNREFUSED' }) })
+    cleanup.push(() => p.dispose())
+    p.setEmbedOrigin('http://localhost:3080')
+    await assert.rejects(p.open({ url: '5173', cwd }, config), /npm run dev -- --host 127\.0\.0\.1 --port 5173/)
+    assert.equal(calls.length, 0)
+    assert.match(renderPreview({ needsAgent: true, reason: 'GET http://localhost:5173/ 没有响应。', project: cwd, command: 'npm run dev -- --host 127.0.0.1 --port 5173', url: 'http://localhost:5173/' }), /不要换端口/)
   })
 
   it('ignores malformed embed origins', () => {

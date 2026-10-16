@@ -11,6 +11,15 @@ export function renderStatus(s) {
 }
 
 export function renderPreview(s) {
+  if (s?.needsAgent) {
+    return [
+      `页面还没有起来，预览没有启动。${s.reason || ''}`.trim(),
+      `在这个目录执行（不要换目录）：${s.project}`,
+      s.command,
+      `等它监听后，用同一个地址再调用 page_harness_preview：${s.url}`,
+      '不要自己运行 page-harness，也不要换端口。',
+    ].join('\n')
+  }
   if (s?.waitingForPage) return '预览已准备好，用户打开 DSH 页面后会显示在右侧。对用户只说一句即可。'
   if (!s?.running) return `预览没有打开${s?.error ? `：${s.error}` : '。'}`
   return [

@@ -7,6 +7,7 @@ import { defaultLang, pageStrings } from '../shared/i18n-page'
 import type { PageHost } from '../shared/page-host'
 import { startDirectReview } from './direct'
 import { installRelay } from './relay'
+import { panelWatchAdvance, panelWatchDelay, panelWatchIdle } from './panel-watch'
 import { createReview } from './review'
 import { OVERLAY_CSS } from './style'
 
@@ -172,11 +173,15 @@ function init() {
   }
 
   let chatFrame: HTMLIFrameElement | null = null
+  let panelLoaded = false
   if (!bookmarklet) {
     chatFrame = document.createElement('iframe')
     chatFrame.src = `${controlOrigin}/__ph/ui#chat`
     chatFrame.allow = 'clipboard-read; clipboard-write'
     chatFrame.title = 'Page Harness chat'
+    chatFrame.addEventListener('load', () => {
+      panelLoaded = true
+    })
     drawer.appendChild(chatFrame)
   }
   let artFrame: HTMLIFrameElement | null = null
@@ -185,6 +190,8 @@ function init() {
   let chatPort: MessagePort | null = null
   let artPort: MessagePort | null = null
   let ready = bookmarklet
+  let panelWatch = panelWatchIdle()
+  let panelTimer = 0
   let picking = false
   let busy = false
   let controlOn = false
@@ -244,10 +251,15 @@ function init() {
   }
 
   const renderButtons = () => {
+    if (noAgent) {
+      const who = $<HTMLElement>('.who')
+      who.hidden = false
+      who.textContent = !ready && panelWatch.down ? t.sessionDead : `${siteHost()} · ${t.reviewOnly}`
+    }
     for (const act of ['pick', 'artifacts', 'chat']) {
       const b = btn(act)
       b.disabled = !ready || (act === 'pick' && busy)
-      if (!ready) b.dataset.tip = t.notReady
+      if (!ready && !(noAgent && panelWatch.down)) b.dataset.tip = panelWatch.down ? t.sessionDead : t.notReady
       else if (act === 'pick' && busy) b.dataset.tip = t.pickBusy
       else delete b.dataset.tip
     }
@@ -566,6 +578,35 @@ function init() {
     for (const [k, ac] of running) if (!id || k === id) ac.abort()
   }
 
+  // ---------- panel liveness ----------
+  // ready stays false until the control iframe completes its handshake, and the dock
+  // otherwise says "Panel is loading…" forever. If that document never arrives, the
+  // control port is down; if it arrives and still never attaches, reload it.
+  const reloadPanel = () => {
+    if (!chatFrame) return
+    panelLoaded = false
+    const base = chatFrame.src.split('#')[0].split('?')[0]
+    chatFrame.src = `${base}?r=${Date.now()}#chat`
+  }
+  const armPanelWatch = () => {
+    if (!chatFrame) return
+    clearTimeout(panelTimer)
+    panelTimer = window.setTimeout(() => {
+      if (ready) return
+      const step = panelWatchAdvance(panelWatch, panelLoaded)
+      panelWatch = step.state
+      if (step.downNow) toast('warn', t.sessionDead)
+      if (step.reload) reloadPanel()
+      renderButtons()
+      armPanelWatch()
+    }, panelWatchDelay(panelWatch))
+  }
+  const panelUp = () => {
+    panelWatch = panelWatchIdle()
+    clearTimeout(panelTimer)
+    renderButtons()
+  }
+
   // ---------- panel channel ----------
   const attachInfo = () => ({ tab, url: location.href, title: document.title, lang, theme, caps: caps(), visible: document.visibilityState === 'visible' })
 
@@ -576,6 +617,7 @@ function init() {
       case 'ph:ready':
         if (role === 'chat') {
           ready = true
+          panelUp()
           flushPicks()
           renderButtons()
         }
@@ -636,6 +678,15 @@ function init() {
         break
       case 'ph:session-dead':
         toast('warn', t.sessionDead)
+        if (role === 'chat' && chatFrame) {
+          ready = false
+          chatPort?.close()
+          chatPort = null
+          panelWatch = { down: true, misses: 0 }
+          reloadPanel()
+          renderButtons()
+          armPanelWatch()
+        }
         break
       case 'ph:review-items':
         review.setState(m.review, m.mode, m.me)
@@ -666,6 +717,9 @@ function init() {
         chatPort?.close()
         chatPort = port
         ready = false
+        panelLoaded = true
+        panelUp()
+        armPanelWatch()
         port.onmessage = onPanelMessage('chat')
         port.postMessage({ type: 'ph:attach', ...attachInfo() } satisfies ToPanel)
       } else if (artFrame && e.source === artFrame.contentWindow && d.role === 'artifacts') {
@@ -816,6 +870,7 @@ function init() {
 
   applyTheme()
   applyLang()
+  armPanelWatch()
   if (drawerState.open && !noAgent) setDrawer(true)
   if (bookmarklet && cfg.token) {
     review.setState({ items: [], approvals: [] }, 'review', { access: 'owner', id: 'owner', name: 'You' })

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { sameOrigin } from '../lib/host-utils.js'
+import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { PreviewManager, assertLocalTarget, cliArgs, normalizeTarget } from '../lib/preview.js'
 
@@ -39,6 +40,20 @@ describe('PreviewManager', () => {
     const c = await manager.start({ ...base, target: '3000' })
     assert.notEqual(c.pid, a.pid)
     assert.equal(c.target, 'http://localhost:3000/')
+  })
+
+  it('retries once on the next port pair when the first ports are busy', async () => {
+    let n = 0
+    manager = new PreviewManager({
+      spawn: (cmd, args, opts) => {
+        n++
+        return spawn(cmd, args, { ...opts, env: { ...process.env, FAKE_MODE: n === 1 ? 'crash' : 'ready' } })
+      },
+    })
+    const s = await manager.start({ ...base, target: '5173', port: 17980 })
+    assert.equal(n, 2)
+    assert.equal(s.running, true)
+    assert.equal(s.port, 17982)
   })
 
   it('surfaces the CLI error when it exits before ready', async () => {
