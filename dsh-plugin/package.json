@@ -30,6 +30,9 @@
   "engines": {
     "node": ">=20.11"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "node --test test/*.test.js"
   },

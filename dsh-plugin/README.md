@@ -7,7 +7,11 @@ DeepSeek Harness 插件，两个功能：
 
 ## 安装
 
-先在仓库根目录构建 page-harness，再把本目录装进 web profile：
+从 npm 安装，或在本仓库构建后按目录安装：
+
+```sh
+dsh plugin --profile web add page-harness-dsh
+```
 
 ```sh
 npm ci && npm run build

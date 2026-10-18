@@ -22,7 +22,6 @@ jobs:
       - run: npm run typecheck
       - run: npm run build:client
       - run: npm test
-      - run: node --test dsh-plugin/test/*.test.js
       - run: npm run build
 
   e2e:
@@ -42,3 +41,22 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report
+
+  dsh:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: dsh-plugin/package-lock.json
+      - run: npm ci
+        working-directory: dsh-plugin
+      - run: npm test
+        working-directory: dsh-plugin
+      - run: npm pack --dry-run
+        working-directory: dsh-plugin
