@@ -30,7 +30,7 @@ https://github.com/user-attachments/assets/7fe5d123-58e2-4aa2-a5e3-f7fe9eae51b7
 
 **把正在跑的网页，直接变成编码 Agent 的工作台。**
 
-在页面上点一下要改的地方，就能跟 Agent 说怎么改：取点、聊天、看产物，背后用的就是你电脑上已经装好的 Agent CLI（Claude Code、Codex、Cursor Agent、CodeBuddy Code、OpenCode）。只想收集意见的话，`--no-agent` 只留取点和意见；不给地址直接跑，会打开一个书签主页，把 **✦ Page-Harness** 拖到书签栏，任何网页都能标。
+一行命令启动，不用改项目配置，也不用额外注册账号或填 API Key。直接在页面上点选要改的元素就能跟 Agent 对话（取点、聊天、Live 多套候选方案、看产物），或者原地在线修改文字与样式实时预览；加个 `--share` 还能生成分享链接，拉上产品、设计与测试同事在同一个页面上实时批注和审批。背后直接驱动你电脑上已经装好的 Agent CLI（Claude Code、Codex、Cursor Agent、CodeBuddy Code、OpenCode），也可以装进 [DeepSeek Harness](./dsh-plugin/README.md) 在对话右栏直接预览。只想收集意见的话，`--no-agent` 只留取点和意见；不给地址直接跑，会打开一个书签主页，把 **✦ Page-Harness** 拖到书签栏，任何网页都能标。
 
 在终端里描述界面挺折磨人的：“左边卡片里第二个按钮，颜色再柔和一点”。我就想直接在页面上点一下，跟 Agent 说改成什么样。它改代码，dev server 刷新，结果就在同一个页面上看。page-harness 干的就是这件事。
 
@@ -40,7 +40,8 @@ https://github.com/user-attachments/assets/7fe5d123-58e2-4aa2-a5e3-f7fe9eae51b7
 
 ```bash
 npx page-harness http://localhost:5173 --project ./my-app
-npx page-harness --no-agent http://localhost:5173   # 只评审：取点 + 意见，不启动 Agent CLI
+npx page-harness http://localhost:5173 --share      # 团队评审：生成分享链接让同事一起看
+npx page-harness --no-agent http://localhost:5173   # 只评审：取点 + 在线编辑 + 意见，不启动 Agent CLI
 npx page-harness                                    # 不给地址：打开书签主页
 ```
 
@@ -50,27 +51,27 @@ npx page-harness                                    # 不给地址：打开书�
 - 地址可以只写端口（`3000`）、`host:port` 或完整 URL。Vite、webpack、Next.js 这些的热更新照常能用，WebSocket 也代理过去了。
 - 不要沙箱，不要注册账号，也不碰你的项目代码。数据都放在 `<project>/.page-harness/` 里。
 
-| 服务 | 地址 |
-|---|---|
-| 你的应用 + 底栏 | `http://127.0.0.1:17990` |
-| 面板 / API（控制端口） | `http://127.0.0.1:17991` |
-| 对话历史 | `http://127.0.0.1:17991/__ph/history` |
-| 书签主页（不给地址时） | `http://127.0.0.1:17991` |
-
 ### 其他跑法
 
 | 方式 | 什么时候用 |
 |---|---|
-| `npx page-harness <地址>` | 上面这种标准用法：应用走代理，取点、对话、产物都由 Agent CLI 驱动 |
-| `--no-agent <地址>` | 只收意见：取点 + 意见，不需要 Agent CLI（[详细](#仅评审--no-agent)） |
+| `npx page-harness <地址>` | 上面这种标准用法：应用走代理，取点、对话、Live 候选、产物都由 Agent CLI 驱动 |
+| `--share` | 同一网络的同事拿链接进来当评审，实时留意见、在线改样式、按页审批（[详细](#团队评审--share)） |
+| `--no-agent <地址>` | 只收意见与在线改样式：取点 + 意见，不需要 Agent CLI（[详细](#仅评审--no-agent)） |
 | 不给地址 | 打开带 **✦ Page-Harness** 书签的主页，不走代理也能在任意网站上留意见（[详细](#书签不给地址)） |
-| `--share` | 同一网络的同事拿链接进来当评审（[详细](#团队评审--share)） |
+| `dsh plugin --profile web add page-harness-dsh` | 在 DeepSeek Harness 对话右侧直接预览页面、取点引用回填输入框、一键分享给同事（[详细](./dsh-plugin/README.md)） |
 
 ## 上手看看
 
-### 仅评审
+### DeepSeek Harness 右栏预览
 
-**只有取点和意见。** 加 `--no-agent` 就不启动 Agent CLI。点元素留评论或者直接改，回复、解决、按页面审批都行。[详细 →](#仅评审--no-agent)
+**边聊边看。** 装上 [`page-harness-dsh`](./dsh-plugin/README.md) 后，页面直接嵌在 DeepSeek Harness 对话右侧：点元素一键引用到输入框，在页面上留批注后说一句「按意见改」，还能一键分享给同事评审。
+
+<p align="center"><img src="./docs/dsh-preview-light.png" width="720" alt="DeepSeek Harness 对话右侧预览页面"></p>
+
+### 仅评审与在线编辑
+
+**取点、在线改样式、留意见。** 加 `--no-agent` 就不启动 Agent CLI。点元素留评论或者原地修改文字、颜色、字号、圆角实时预览，回复、解决、按页面审批都行。[详细 →](#仅评审--no-agent)
 
 <p align="center"><img src="https://cdn.jsdelivr.net/npm/page-harness@0.1.10/docs/review-only-zh.png" width="720" alt="仅评审模式下的页面意见面板"></p>
 
@@ -95,15 +96,16 @@ npx page-harness                                    # 不给地址：打开书�
 ## 原理
 
 ```text
-浏览器 ──► :17990  应用端口  反向代理到你的开发服务器，在 HTML 里注入 /__ph/overlay.js
-       └─► :17991  控制端口  面板 UI、聊天记录页、JSON API、WebSocket、MCP
-                      │
-                      └─ 每一轮对话启动一次 Agent CLI（claude -p / codex app-server / cursor-agent -p /
-                        codebuddy -p / opencode run --format json），
-                         并接入本地 MCP：page_*、产物、提问、Live
+正在运行的网页 ──► 页面悬浮底栏（取点 / 在线编辑 / 团队意见 / 对话 / 产物）
+                        │
+                        ▼
+               连接本机 Agent CLI（Claude Code / Codex / Cursor / CodeBuddy / OpenCode）
+                        │
+                        ▼
+               修改源码或生成多套候选方案 ──► 页面实时热更新预览 & 团队评审闭环
 ```
 
-- 底栏在 Shadow DOM 里，和你的样式互不影响。对话窗、产物窗是来自控制端口的 iframe，通过 `MessagePort` 握手和页面通信。
+- 底栏在 Shadow DOM 里，和你的样式互不影响。
 - 每个会话记住 Agent 的 session id，后续消息续接同一个 Agent 会话；一轮还在跑时发的消息进入该会话的队列。
 - Agent 会收到一段简短的系统提示，说明页面上下文、MCP 工具和 Live 协议。除了 `.page-harness/`（自带 `.gitignore`）和 Live 期间的临时候选标记外，不会往你的项目里写东西。
 
@@ -338,12 +340,10 @@ node dist/cli.js http://localhost:5173 --project ../some-app
 
 npm run lint
 npm run typecheck
-npm test               # 单元测试 + 服务端集成测试（脚本化 Agent）
+npm test               # 单元测试 + 服务端集成测试
 npx playwright install chromium
 npm run build && npm run test:e2e   # 基于示例应用的浏览器测试
 ```
-
-设置 `PH_FAKE_AGENT=1` 会多出一个脚本化的 `fake` Agent，测试用它走真实的 MCP 接口，不需要大模型就能覆盖整条链路。
 
 ## 参与贡献
 
